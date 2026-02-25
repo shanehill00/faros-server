@@ -8,17 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from faros_server.db import Base
-
-
-def _utcnow() -> datetime:
-    """Return timezone-aware UTC now."""
-    return datetime.now(timezone.utc)
-
-
-def _uuid() -> str:
-    """Generate a new UUID hex string."""
-    return uuid.uuid4().hex
+from faros_server.utils.db import Base
 
 
 class Agent(Base):
@@ -26,11 +16,15 @@ class Agent(Base):
 
     __tablename__ = "agents"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: uuid.uuid4().hex
+    )
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     robot_type: Mapped[str] = mapped_column(String(255))
     owner_id: Mapped[str] = mapped_column(String(36), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="registered")
     last_health: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -41,10 +35,11 @@ class ApiKey(Base):
 
     __tablename__ = "api_keys"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     agent_id: Mapped[str] = mapped_column(String(36), index=True)
-    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -54,7 +49,9 @@ class DeviceRegistration(Base):
 
     __tablename__ = "device_registrations"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: uuid.uuid4().hex
+    )
     device_code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     user_code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     agent_name: Mapped[str] = mapped_column(String(255))
@@ -63,4 +60,6 @@ class DeviceRegistration(Base):
     api_key_plaintext: Mapped[str | None] = mapped_column(String(64), nullable=True)
     agent_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

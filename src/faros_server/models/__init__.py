@@ -7,3 +7,4 @@ from faros_server.models.agent import DeviceRegistration as DeviceRegistration
 from faros_server.models.command import AgentCommand as AgentCommand
 from faros_server.models.event import AgentEvent as AgentEvent
 from faros_server.models.user import User as User
+from faros_server.models.user import UserAuthMethod as UserAuthMethod

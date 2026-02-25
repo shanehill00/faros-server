@@ -1,37 +1,53 @@
-"""Tests for database module edge cases."""
+"""Tests for Database class edge cases."""
+
+import os
 
 import pytest
 
-from faros_server.db import close_db, create_tables, get_session, init_db
 from faros_server.models.agent import Agent
 from faros_server.models.user import User
+from faros_server.utils.db import Database
 
 
 @pytest.mark.asyncio
-async def test_close_db_when_not_initialized() -> None:
-    """close_db is a no-op when engine is None."""
-    await close_db()
+async def test_close_when_not_initialized() -> None:
+    """Database.close() is a no-op when engine is None."""
+    await Database.close()
 
 
 @pytest.mark.asyncio
-async def test_get_session_yields_session() -> None:
-    """get_session yields a working async session."""
-    init_db("sqlite+aiosqlite://")
-    await create_tables()
-    async for session in get_session():
+async def test_get_pool_yields_connection() -> None:
+    """Pool creates a working database connection."""
+    Database.init("sqlite+aiosqlite://")
+    await Database.create_tables()
+    pool = Database.get_pool()
+    async with pool() as session:
         assert session is not None
-    await close_db()
+    await Database.close()
+
+
+@pytest.mark.asyncio
+async def test_init_file_based(tmp_path: object) -> None:
+    """Database.init() with a file-based SQLite URL uses standard pooling."""
+    db_path = os.path.join(str(tmp_path), "test.db")
+    Database.init(f"sqlite+aiosqlite:///{db_path}")
+    await Database.create_tables()
+    pool = Database.get_pool()
+    async with pool() as session:
+        assert session is not None
+    await Database.close()
+    os.unlink(db_path)
 
 
 @pytest.mark.asyncio
 async def test_models_create_agent() -> None:
     """Agent and User models can be inserted and queried."""
-    init_db("sqlite+aiosqlite://")
-    await create_tables()
-    async for session in get_session():
+    Database.init("sqlite+aiosqlite://")
+    await Database.create_tables()
+    pool = Database.get_pool()
+    async with pool() as session:
         user = User(
-            email="test@example.com",
-            hashed_password="fakehash",
+            name="Test User",
             is_superuser=False,
         )
         session.add(user)
@@ -45,4 +61,4 @@ async def test_models_create_agent() -> None:
         await session.commit()
         assert agent.id is not None
         assert agent.created_at is not None
-    await close_db()
+    await Database.close()

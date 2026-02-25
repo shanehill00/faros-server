@@ -1,0 +1,10 @@
+secret_key: "change-me-in-production"
+database_url: "sqlite+aiosqlite:///faros.db"
+token_expire_minutes: 60
+base_url: "http://localhost:8000"
+
+google_client_id: ""
+google_client_secret: ""
+google_auth_url: "https://accounts.google.com/o/oauth2/v2/auth"
+google_token_url: "https://oauth2.googleapis.com/token"
+google_userinfo_url: "https://www.googleapis.com/oauth2/v2/userinfo"
