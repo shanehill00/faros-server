@@ -12,7 +12,7 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.exceptions import NotAuthorizedException
 
-from faros_server.config import Settings
+from faros_server.config import Settings, load_settings
 from faros_server.controllers.auth import AuthController
 from faros_server.controllers.health import HealthController
 from faros_server.controllers.ws import websocket_endpoint
@@ -101,7 +101,7 @@ def _provide_health(state: State) -> HealthResource:
 def create_app(settings: Settings | None = None) -> Litestar:
     """Create and configure the Litestar application."""
     if settings is None:
-        settings = Settings()
+        settings = load_settings()
     return Litestar(
         route_handlers=[HealthController, AuthController, websocket_endpoint],
         state=_build(settings),
