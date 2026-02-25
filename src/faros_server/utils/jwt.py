@@ -1,9 +1,9 @@
-"""JWT manager — constructed once at startup with signing config."""
+"""JWT manager — configured once at startup, all methods are class-level."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 from jose import JWTError, jwt
 
@@ -14,21 +14,28 @@ from faros_server.models.user import User
 class JWTManager:
     """JWT token creation, verification, and user resolution.
 
-    Built once at startup with the signing key, algorithm, and token lifetime.
+    Call ``configure()`` once at startup, then use class methods directly.
     """
 
-    def __init__(
-        self,
+    _secret_key: ClassVar[str] = ""
+    _algorithm: ClassVar[str] = "HS256"
+    _expire_minutes: ClassVar[int] = 60
+
+    @classmethod
+    def configure(
+        cls,
         *,
         secret_key: str,
         algorithm: str = "HS256",
         expire_minutes: int = 60,
     ) -> None:
-        self._secret_key = secret_key
-        self._algorithm = algorithm
-        self._expire_minutes = expire_minutes
+        """Set signing config. Call once at startup."""
+        cls._secret_key = secret_key
+        cls._algorithm = algorithm
+        cls._expire_minutes = expire_minutes
 
-    def create_token(self, claims: dict[str, Any]) -> str:
+    @classmethod
+    def create_token(cls, claims: dict[str, Any]) -> str:
         """Create a signed JWT token.
 
         Args:
@@ -39,11 +46,12 @@ class JWTManager:
         """
         to_encode = claims.copy()
         to_encode["exp"] = datetime.now(timezone.utc) + timedelta(
-            minutes=self._expire_minutes,
+            minutes=cls._expire_minutes,
         )
-        return jwt.encode(to_encode, self._secret_key, algorithm=self._algorithm)
+        return jwt.encode(to_encode, cls._secret_key, algorithm=cls._algorithm)
 
-    def decode_token(self, token: str) -> dict[str, Any]:
+    @classmethod
+    def decode_token(cls, token: str) -> dict[str, Any]:
         """Decode and verify a JWT token.
 
         Returns:
@@ -54,20 +62,21 @@ class JWTManager:
         """
         try:
             payload: dict[str, Any] = jwt.decode(
-                token, self._secret_key, algorithms=[self._algorithm],
+                token, cls._secret_key, algorithms=[cls._algorithm],
             )
         except JWTError as error:
             raise ValueError(f"Invalid token: {error}") from error
         return payload
 
-    async def resolve_user(self, token: str, user_dao: UserDAO) -> User:
+    @classmethod
+    async def resolve_user(cls, token: str, user_dao: UserDAO) -> User:
         """Decode a JWT token and return the corresponding active User.
 
         Raises:
             ValueError: If the token is invalid, has no sub claim,
                 or the user is not found/inactive.
         """
-        payload = self.decode_token(token)
+        payload = cls.decode_token(token)
         user_id = payload.get("sub")
         if user_id is None:
             raise ValueError("Invalid token payload: missing sub claim")

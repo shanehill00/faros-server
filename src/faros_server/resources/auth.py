@@ -40,11 +40,15 @@ class AuthResource:
         *,
         user_service: UserService,
         oauth_client: GoogleOAuthClient,
-        jwt_manager: JWTManager,
     ) -> None:
         self._user_service = user_service
         self._oauth_client = oauth_client
-        self._jwt_manager = jwt_manager
+
+    @staticmethod
+    def _validate_provider(provider: str) -> None:
+        """Raise UnsupportedProviderError if the provider is not in the supported set."""
+        if provider not in _SUPPORTED_PROVIDERS:
+            raise UnsupportedProviderError(f"Unsupported provider: {provider}")
 
     def login_url(self, provider: str) -> str:
         """Build the OAuth authorization URL for the given provider.
@@ -53,7 +57,7 @@ class AuthResource:
             UnsupportedProviderError: If the provider is not supported.
             OAuthNotConfiguredError: If OAuth credentials are not set.
         """
-        _validate_provider(provider)
+        self._validate_provider(provider)
         if not self._oauth_client.is_configured:
             raise OAuthNotConfiguredError("Google OAuth not configured")
         state = secrets.token_urlsafe(32)
@@ -69,7 +73,7 @@ class AuthResource:
             UnsupportedProviderError: If the provider is not supported.
             AuthError: If code exchange fails or user is inactive.
         """
-        _validate_provider(provider)
+        self._validate_provider(provider)
         try:
             info = await self._oauth_client.exchange_code(
                 code=code, redirect_uri=self._oauth_client.callback_uri,
@@ -79,7 +83,7 @@ class AuthResource:
         user = await self._user_service.find_or_create_user(info)
         if not user.is_active:
             raise AuthError("User account is inactive")
-        token = self._jwt_manager.create_token({"sub": user.id})
+        token = JWTManager.create_token({"sub": user.id})
         return {"access_token": token, "token_type": "bearer"}
 
     async def me(self, user: User) -> dict[str, object]:
@@ -93,7 +97,7 @@ class AuthResource:
             UnsupportedProviderError: If the provider is not supported.
             OAuthNotConfiguredError: If OAuth credentials are not set.
         """
-        _validate_provider(provider)
+        self._validate_provider(provider)
         if not self._oauth_client.is_configured:
             raise OAuthNotConfiguredError("Google OAuth not configured")
         state = secrets.token_urlsafe(32)
@@ -112,7 +116,7 @@ class AuthResource:
             AuthError: If code exchange fails.
             DuplicateLinkError: If the provider account is already linked.
         """
-        _validate_provider(provider)
+        self._validate_provider(provider)
         try:
             info = await self._oauth_client.exchange_code(
                 code=code, redirect_uri=self._oauth_client.link_callback_uri,
@@ -125,7 +129,3 @@ class AuthResource:
             raise DuplicateLinkError(str(error)) from error
 
 
-def _validate_provider(provider: str) -> None:
-    """Raise UnsupportedProviderError if the provider is not in the supported set."""
-    if provider not in _SUPPORTED_PROVIDERS:
-        raise UnsupportedProviderError(f"Unsupported provider: {provider}")

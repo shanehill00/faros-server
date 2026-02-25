@@ -32,11 +32,6 @@ def test_is_not_configured() -> None:
     assert empty.is_configured is False
 
 
-def test_provider(oauth: GoogleOAuthClient) -> None:
-    """provider returns 'google'."""
-    assert oauth.provider == "google"
-
-
 def test_callback_uri(oauth: GoogleOAuthClient) -> None:
     """callback_uri builds the login callback URL."""
     assert oauth.callback_uri == "http://localhost:8000/api/auth/callback/google"

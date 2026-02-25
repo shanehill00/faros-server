@@ -9,8 +9,8 @@ from typing import Any
 import yaml
 from pydantic_settings import BaseSettings
 
-# Repo root / config / <env> / settings.yaml
-_CONFIG_ROOT = Path(__file__).resolve().parents[1] / "config"
+# faros_server/config/<env>/settings.yaml
+_CONFIG_ROOT = Path(__file__).resolve().parent
 
 
 def _load_yaml(env: str) -> dict[str, Any]:

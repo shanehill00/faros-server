@@ -13,7 +13,7 @@ from faros_server.models.user import User, UserAuthMethod
 from faros_server.utils.db import Database
 from faros_server.utils.jwt import JWTManager
 
-_test_jwt = JWTManager(secret_key="test-secret-key", expire_minutes=30)
+JWTManager.configure(secret_key="test-secret-key", expire_minutes=30)
 
 
 @pytest.fixture()
@@ -69,5 +69,5 @@ async def auth_headers(
     """Generate JWT auth headers for a user."""
     if user is None:
         user = await create_test_user()
-    token = _test_jwt.create_token({"sub": user.id})
+    token = JWTManager.create_token({"sub": user.id})
     return {"Authorization": f"Bearer {token}"}

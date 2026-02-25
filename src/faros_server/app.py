@@ -16,7 +16,6 @@ from faros_server.clients.google_oauth_client import GoogleOAuthClient
 from faros_server.config import Settings, load_settings
 from faros_server.controllers.auth import AuthController
 from faros_server.controllers.health import HealthController
-from faros_server.controllers.ws import websocket_endpoint
 from faros_server.dao.user_dao import UserDAO
 from faros_server.models.user import User
 from faros_server.resources.auth import AuthResource
@@ -31,14 +30,14 @@ def _build(settings: Settings) -> State:
 
     pool → dao → service ─┐
                            ├→ AuthResource
-    oauth_client ──────────┤
-    jwt_manager ───────────┘
+    oauth_client ──────────┘
+    JWTManager.configure() (class-level)
     HealthResource (standalone)
     """
     pool = Database.init(settings.database_url)
     user_dao = UserDAO(pool)
     user_service = UserService(user_dao)
-    jwt_manager = JWTManager(
+    JWTManager.configure(
         secret_key=settings.secret_key,
         algorithm=settings.jwt_algorithm,
         expire_minutes=settings.token_expire_minutes,
@@ -55,11 +54,9 @@ def _build(settings: Settings) -> State:
     auth_resource = AuthResource(
         user_service=user_service,
         oauth_client=oauth_client,
-        jwt_manager=jwt_manager,
     )
     return State({
         "dao": user_dao,
-        "jwt": jwt_manager,
         "health": health_resource,
         "auth": auth_resource,
     })
@@ -83,10 +80,9 @@ async def provide_current_user(
             detail="Missing or invalid Authorization header"
         )
     token = header[len("Bearer "):]
-    jwt_manager: JWTManager = request.app.state.jwt
     user_dao: UserDAO = request.app.state.dao
     try:
-        return await jwt_manager.resolve_user(token, user_dao)
+        return await JWTManager.resolve_user(token, user_dao)
     except ValueError as error:
         raise NotAuthorizedException(detail=str(error)) from error
 
@@ -108,7 +104,7 @@ def create_app(settings: Settings | None = None) -> Litestar:
     if settings is None:
         settings = load_settings()
     return Litestar(
-        route_handlers=[HealthController, AuthController, websocket_endpoint],
+        route_handlers=[HealthController, AuthController],
         state=_build(settings),
         lifespan=[lifespan],
         dependencies={

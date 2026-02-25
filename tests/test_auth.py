@@ -11,8 +11,6 @@ from faros_server.clients.google_oauth_client import OAuthUserInfo
 from faros_server.utils.jwt import JWTManager
 from tests.conftest import auth_headers, create_test_user
 
-_test_jwt = JWTManager(secret_key="test-secret-key", expire_minutes=30)
-
 
 def _oauth_client(client: TestClient) -> object:  # type: ignore[type-arg]
     """Return the GoogleOAuthClient inside the AuthResource."""
@@ -349,7 +347,7 @@ def test_me_bearer_prefix_required(client: TestClient) -> None:  # type: ignore[
 
 def test_me_token_no_sub_claim(client: TestClient) -> None:  # type: ignore[type-arg]
     """Token without 'sub' claim returns 401."""
-    token = _test_jwt.create_token({"foo": "bar"})
+    token = JWTManager.create_token({"foo": "bar"})
     response =client.get(
         "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
     )
@@ -360,7 +358,7 @@ def test_me_token_no_sub_claim(client: TestClient) -> None:  # type: ignore[type
 async def test_me_token_user_deleted(client: TestClient) -> None:  # type: ignore[type-arg]
     """Token for nonexistent user returns 401."""
     await create_test_user()
-    token = _test_jwt.create_token({"sub": "nonexistent-id-000"})
+    token = JWTManager.create_token({"sub": "nonexistent-id-000"})
     response =client.get(
         "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
     )
