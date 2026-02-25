@@ -1,4 +1,4 @@
-"""JWT token creation and verification with python-jose."""
+"""JWT token creation, verification, and user resolution."""
 
 from __future__ import annotations
 
@@ -6,6 +6,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from jose import JWTError, jwt
+
+from faros_server.dao.user_dao import UserDAO
+from faros_server.models.user import User
 
 _ALGORITHM = "HS256"
 
@@ -48,3 +51,23 @@ def decode_token(token: str, secret: str) -> dict[str, Any]:
     except JWTError as exc:
         raise ValueError(f"Invalid token: {exc}") from exc
     return payload
+
+
+async def current_user_from_token(
+    token: str, secret_key: str, dao: UserDAO
+) -> User:
+    """Decode a JWT token and return the corresponding active User.
+
+    Raises:
+        ValueError: If the token is invalid, has no sub claim,
+            or the user is not found/inactive.
+    """
+    payload = decode_token(token, secret_key)
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise ValueError("Invalid token payload: missing sub claim")
+    async with dao.transaction():
+        user = await dao.find_by_id(user_id)
+    if user is None or not user.is_active:
+        raise ValueError("User not found or inactive")
+    return user

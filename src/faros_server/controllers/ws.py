@@ -1,4 +1,4 @@
-"""WebSocket transport — same service layer, different protocol."""
+"""WebSocket transport — same resources, different protocol."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ from typing import Any
 
 from litestar import WebSocket, websocket
 from litestar.datastructures import State
-from litestar.exceptions import NotAuthorizedException, WebSocketDisconnect
+from litestar.exceptions import WebSocketDisconnect
 
-from faros_server.auth.deps import current_user_from_token
+from faros_server.auth.jwt import current_user_from_token
 from faros_server.dao.user_dao import UserDAO
-from faros_server.services.user_service import UserService
+from faros_server.resources.auth import AuthResource
 
 
 async def _authenticate(
@@ -19,19 +19,20 @@ async def _authenticate(
     """Validate a JWT token and return context, or None on failure."""
     try:
         user = await current_user_from_token(token, secret_key, dao)
-    except NotAuthorizedException:
+    except ValueError:
         return None
     return {"user_id": user.id, "user": user}
 
 
 async def _dispatch(
     action: str,
-    svc: UserService,
+    auth: AuthResource,
+    dao: UserDAO,
     ctx: dict[str, Any],
 ) -> dict[str, Any]:
-    """Route an action to the appropriate service method."""
+    """Route an action to the appropriate resource method."""
     if action == "auth.me":
-        result = await svc.load_user_response(ctx["user"])
+        result = await auth.me(ctx["user"])
         return {"action": action, "data": result}
 
     return {
@@ -47,7 +48,7 @@ async def websocket_endpoint(socket: WebSocket[object, object, State]) -> None:
 
     settings = socket.app.state.settings
     dao: UserDAO = socket.app.state.dao
-    svc: UserService = socket.app.state.svc
+    auth: AuthResource = socket.app.state.auth
     ctx: dict[str, Any] | None = None
 
     try:
@@ -86,7 +87,7 @@ async def websocket_endpoint(socket: WebSocket[object, object, State]) -> None:
                 await socket.close(code=4001, reason="User invalid")
                 return
             ctx["user"] = user
-            response = await _dispatch(action, svc, ctx)
+            response = await _dispatch(action, auth, dao, ctx)
             await socket.send_json(response)
 
     except WebSocketDisconnect:

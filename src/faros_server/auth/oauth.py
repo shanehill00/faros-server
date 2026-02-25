@@ -1,4 +1,4 @@
-"""OAuth provider implementations."""
+"""OAuth provider client — constructed once at startup with all config."""
 
 from __future__ import annotations
 
@@ -19,86 +19,97 @@ class OAuthUserInfo:
     avatar_url: str | None = None
 
 
-_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-_GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+class GoogleOAuthClient:
+    """Google OAuth2 client. Built once at startup, reused for every request."""
 
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        client_secret: str,
+        base_url: str,
+        auth_url: str = "https://accounts.google.com/o/oauth2/v2/auth",
+        token_url: str = "https://oauth2.googleapis.com/token",
+        userinfo_url: str = "https://www.googleapis.com/oauth2/v2/userinfo",
+    ) -> None:
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._base_url = base_url
+        self._auth_url = auth_url
+        self._token_url = token_url
+        self._userinfo_url = userinfo_url
 
-def google_authorization_url(
-    client_id: str,
-    redirect_uri: str,
-    state: str,
-) -> str:
-    """Build the Google OAuth2 authorization URL."""
-    params = {
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "state": state,
-        "access_type": "offline",
-        "prompt": "select_account",
-    }
-    return f"{_GOOGLE_AUTH_URL}?{urlencode(params)}"
+    @property
+    def is_configured(self) -> bool:
+        """True if client_id is set (minimum for OAuth to work)."""
+        return bool(self._client_id)
 
+    def callback_uri(self, provider: str) -> str:
+        """Build the OAuth callback URL for login."""
+        return f"{self._base_url}/api/auth/callback/{provider}"
 
-async def google_exchange_code(
-    code: str,
-    client_id: str,
-    client_secret: str,
-    redirect_uri: str,
-) -> OAuthUserInfo:
-    """Exchange a Google authorization code for user info.
+    def link_callback_uri(self, provider: str) -> str:
+        """Build the OAuth callback URL for account linking."""
+        return f"{self._base_url}/api/auth/link/callback/{provider}"
 
-    Args:
-        code: Authorization code from Google callback.
-        client_id: Google OAuth client ID.
-        client_secret: Google OAuth client secret.
-        redirect_uri: Must match the redirect_uri used in the authorization request.
+    def authorization_url(self, redirect_uri: str, state: str) -> str:
+        """Build the Google OAuth2 authorization URL."""
+        params = {
+            "client_id": self._client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "access_type": "offline",
+            "prompt": "select_account",
+        }
+        return f"{self._auth_url}?{urlencode(params)}"
 
-    Returns:
-        OAuthUserInfo with the user's Google profile.
+    async def exchange_code(self, code: str, redirect_uri: str) -> OAuthUserInfo:
+        """Exchange a Google authorization code for user info.
 
-    Raises:
-        ValueError: If the token exchange or userinfo request fails.
-    """
-    async with httpx.AsyncClient() as client:
-        # Exchange code for tokens
-        token_resp = await client.post(
-            _GOOGLE_TOKEN_URL,
-            data={
-                "code": code,
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "redirect_uri": redirect_uri,
-                "grant_type": "authorization_code",
-            },
+        Raises:
+            ValueError: If the token exchange or userinfo request fails.
+        """
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(
+                self._token_url,
+                data={
+                    "code": code,
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+            if token_resp.status_code != 200:
+                raise ValueError(
+                    f"Google token exchange failed: {token_resp.text}"
+                )
+            tokens = token_resp.json()
+            access_token = tokens.get("access_token")
+            if not access_token:
+                raise ValueError("No access_token in Google response")
+
+            userinfo_resp = await client.get(
+                self._userinfo_url,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if userinfo_resp.status_code != 200:
+                raise ValueError(
+                    f"Google userinfo request failed: {userinfo_resp.text}"
+                )
+            info = userinfo_resp.json()
+
+        provider_id = info.get("id", "")
+        email = info.get("email", "")
+        if not provider_id or not email:
+            raise ValueError("Google did not return id or email")
+
+        return OAuthUserInfo(
+            provider="google",
+            provider_id=str(provider_id),
+            email=email,
+            name=info.get("name"),
+            avatar_url=info.get("picture"),
         )
-        if token_resp.status_code != 200:
-            raise ValueError(f"Google token exchange failed: {token_resp.text}")
-        tokens = token_resp.json()
-        access_token = tokens.get("access_token")
-        if not access_token:
-            raise ValueError("No access_token in Google response")
-
-        # Fetch user info
-        userinfo_resp = await client.get(
-            _GOOGLE_USERINFO_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        if userinfo_resp.status_code != 200:
-            raise ValueError(f"Google userinfo request failed: {userinfo_resp.text}")
-        info = userinfo_resp.json()
-
-    provider_id = info.get("id", "")
-    email = info.get("email", "")
-    if not provider_id or not email:
-        raise ValueError("Google did not return id or email")
-
-    return OAuthUserInfo(
-        provider="google",
-        provider_id=str(provider_id),
-        email=email,
-        name=info.get("name"),
-        avatar_url=info.get("picture"),
-    )

@@ -1,4 +1,4 @@
-"""Tests for OAuth provider implementations."""
+"""Tests for GoogleOAuthClient."""
 
 from __future__ import annotations
 
@@ -6,13 +6,43 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from faros_server.auth.oauth import google_authorization_url, google_exchange_code
+from faros_server.auth.oauth import GoogleOAuthClient
 
 
-def test_google_authorization_url_contains_required_params() -> None:
-    """Authorization URL includes client_id, redirect_uri, and scope."""
-    url = google_authorization_url(
+@pytest.fixture()
+def oauth() -> GoogleOAuthClient:
+    """A GoogleOAuthClient wired with test config."""
+    return GoogleOAuthClient(
         client_id="cid-123",
+        client_secret="csecret",
+        base_url="http://localhost:8000",
+    )
+
+
+def test_is_configured(oauth: GoogleOAuthClient) -> None:
+    """is_configured is True when client_id is set."""
+    assert oauth.is_configured is True
+
+
+def test_is_not_configured() -> None:
+    """is_configured is False when client_id is empty."""
+    empty = GoogleOAuthClient(client_id="", client_secret="", base_url="http://localhost")
+    assert empty.is_configured is False
+
+
+def test_callback_uri(oauth: GoogleOAuthClient) -> None:
+    """callback_uri builds the login callback URL."""
+    assert oauth.callback_uri("google") == "http://localhost:8000/api/auth/callback/google"
+
+
+def test_link_callback_uri(oauth: GoogleOAuthClient) -> None:
+    """link_callback_uri builds the link callback URL."""
+    assert oauth.link_callback_uri("google") == "http://localhost:8000/api/auth/link/callback/google"
+
+
+def test_authorization_url(oauth: GoogleOAuthClient) -> None:
+    """authorization_url includes client_id, redirect_uri, and scope."""
+    url = oauth.authorization_url(
         redirect_uri="http://localhost/callback",
         state="random-state",
     )
@@ -23,7 +53,7 @@ def test_google_authorization_url_contains_required_params() -> None:
 
 
 @pytest.mark.asyncio
-async def test_google_exchange_code_success() -> None:
+async def test_exchange_code_success(oauth: GoogleOAuthClient) -> None:
     """Successful code exchange returns OAuthUserInfo."""
     mock_token_resp = MagicMock()
     mock_token_resp.status_code = 200
@@ -45,10 +75,8 @@ async def test_google_exchange_code_success() -> None:
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with patch("faros_server.auth.oauth.httpx.AsyncClient", return_value=mock_client):
-        info = await google_exchange_code(
+        info = await oauth.exchange_code(
             code="auth-code",
-            client_id="cid",
-            client_secret="csecret",
             redirect_uri="http://localhost/callback",
         )
 
@@ -60,7 +88,7 @@ async def test_google_exchange_code_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_google_exchange_code_token_failure() -> None:
+async def test_exchange_code_token_failure(oauth: GoogleOAuthClient) -> None:
     """Token exchange failure raises ValueError."""
     mock_resp = MagicMock()
     mock_resp.status_code = 400
@@ -75,11 +103,11 @@ async def test_google_exchange_code_token_failure() -> None:
         patch("faros_server.auth.oauth.httpx.AsyncClient", return_value=mock_client),
         pytest.raises(ValueError, match="token exchange failed"),
     ):
-        await google_exchange_code("code", "cid", "csecret", "http://localhost/cb")
+        await oauth.exchange_code("code", "http://localhost/cb")
 
 
 @pytest.mark.asyncio
-async def test_google_exchange_code_no_access_token() -> None:
+async def test_exchange_code_no_access_token(oauth: GoogleOAuthClient) -> None:
     """Missing access_token in response raises ValueError."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -94,11 +122,11 @@ async def test_google_exchange_code_no_access_token() -> None:
         patch("faros_server.auth.oauth.httpx.AsyncClient", return_value=mock_client),
         pytest.raises(ValueError, match="No access_token"),
     ):
-        await google_exchange_code("code", "cid", "csecret", "http://localhost/cb")
+        await oauth.exchange_code("code", "http://localhost/cb")
 
 
 @pytest.mark.asyncio
-async def test_google_exchange_code_userinfo_failure() -> None:
+async def test_exchange_code_userinfo_failure(oauth: GoogleOAuthClient) -> None:
     """Userinfo request failure raises ValueError."""
     mock_token_resp = MagicMock()
     mock_token_resp.status_code = 200
@@ -118,11 +146,11 @@ async def test_google_exchange_code_userinfo_failure() -> None:
         patch("faros_server.auth.oauth.httpx.AsyncClient", return_value=mock_client),
         pytest.raises(ValueError, match="userinfo request failed"),
     ):
-        await google_exchange_code("code", "cid", "csecret", "http://localhost/cb")
+        await oauth.exchange_code("code", "http://localhost/cb")
 
 
 @pytest.mark.asyncio
-async def test_google_exchange_code_missing_email() -> None:
+async def test_exchange_code_missing_email(oauth: GoogleOAuthClient) -> None:
     """Missing email in userinfo raises ValueError."""
     mock_token_resp = MagicMock()
     mock_token_resp.status_code = 200
@@ -142,4 +170,4 @@ async def test_google_exchange_code_missing_email() -> None:
         patch("faros_server.auth.oauth.httpx.AsyncClient", return_value=mock_client),
         pytest.raises(ValueError, match="did not return id or email"),
     ):
-        await google_exchange_code("code", "cid", "csecret", "http://localhost/cb")
+        await oauth.exchange_code("code", "http://localhost/cb")

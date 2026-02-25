@@ -1,16 +1,18 @@
-"""Health check controller."""
+"""Health check controller — thin HTTP adapter."""
 
 from __future__ import annotations
 
 from litestar import Controller, get
 
+from faros_server.resources.health import HealthResource
+
 
 class HealthController(Controller):
-    """Health check endpoint."""
+    """HTTP adapter for health checks."""
 
     path = "/api"
 
     @get("/health")
-    async def health(self) -> dict[str, str]:
+    async def health(self, health_resource: HealthResource) -> dict[str, str]:
         """Return server health status."""
-        return {"status": "ok"}
+        return health_resource.check()

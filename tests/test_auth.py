@@ -12,10 +12,15 @@ from faros_server.auth.oauth import OAuthUserInfo
 from tests.conftest import auth_headers, create_test_user
 
 
+def _oauth(client: TestClient) -> object:  # type: ignore[type-arg]
+    """Return the GoogleOAuthClient inside the AuthResource."""
+    return client.app.state.auth._oauth
+
+
 @pytest.mark.asyncio
 async def test_login_google_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
     """GET /api/auth/login/google redirects to Google OAuth."""
-    client.app.state.settings.google_client_id = "test-client-id"
+    _oauth(client)._client_id = "test-client-id"
     resp = client.get("/api/auth/login/google", follow_redirects=False)
     assert resp.status_code == 302
     assert "accounts.google.com" in resp.headers["location"]
@@ -44,8 +49,8 @@ async def test_callback_creates_user(client: TestClient) -> None:  # type: ignor
         name="New User",
         avatar_url="https://example.com/avatar.jpg",
     )
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         return_value=mock_info,
     ):
@@ -65,8 +70,8 @@ async def test_callback_first_user_is_superuser(client: TestClient) -> None:  # 
         email="first@faros.dev",
         name="First",
     )
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         return_value=mock_info,
     ):
@@ -90,8 +95,8 @@ async def test_callback_second_user_not_superuser(client: TestClient) -> None:  
         email="second@faros.dev",
         name="Second",
     )
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         return_value=mock_info,
     ):
@@ -119,8 +124,8 @@ async def test_callback_existing_user_updates_profile(client: TestClient) -> Non
         name="New Name",
         avatar_url="https://example.com/new.jpg",
     )
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         return_value=mock_info,
     ):
@@ -135,8 +140,8 @@ async def test_callback_existing_user_updates_profile(client: TestClient) -> Non
 @pytest.mark.asyncio
 async def test_callback_exchange_failure(client: TestClient) -> None:  # type: ignore[type-arg]
     """OAuth callback returns 401 when code exchange fails."""
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         side_effect=ValueError("token exchange failed"),
     ):
@@ -176,8 +181,8 @@ async def test_callback_inactive_user(client: TestClient) -> None:  # type: igno
         provider_id="g-inactive",
         email="inactive@faros.dev",
     )
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         return_value=mock_info,
     ):
@@ -191,7 +196,7 @@ async def test_callback_inactive_user(client: TestClient) -> None:  # type: igno
 @pytest.mark.asyncio
 async def test_link_redirects_to_provider(client: TestClient) -> None:  # type: ignore[type-arg]
     """GET /api/auth/link/google redirects to Google OAuth (requires JWT)."""
-    client.app.state.settings.google_client_id = "test-client-id"
+    _oauth(client)._client_id = "test-client-id"
     user = await create_test_user()
     headers = await auth_headers(user)
     resp = client.get(
@@ -213,8 +218,8 @@ async def test_link_callback_adds_auth_method(client: TestClient) -> None:  # ty
         email="work@company.com",
         name="Test User",
     )
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         return_value=mock_info,
     ):
@@ -234,14 +239,13 @@ async def test_link_callback_duplicate_provider_409(client: TestClient) -> None:
     """Link callback returns 409 if provider account is already linked."""
     user = await create_test_user()
     headers = await auth_headers(user)
-    # Try to link the same Google account that's already linked
     mock_info = OAuthUserInfo(
         provider="google",
         provider_id="google-123",  # same as create_test_user default
         email="test@faros.dev",
     )
-    with patch(
-        "faros_server.controllers.auth.google_exchange_code",
+    with patch.object(
+        _oauth(client), "exchange_code",
         new_callable=AsyncMock,
         return_value=mock_info,
     ):
@@ -249,6 +253,22 @@ async def test_link_callback_duplicate_provider_409(client: TestClient) -> None:
             "/api/auth/link/callback/google?code=link-code", headers=headers
         )
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_link_callback_exchange_failure(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Link callback returns 401 when code exchange fails."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+    with patch.object(
+        _oauth(client), "exchange_code",
+        new_callable=AsyncMock,
+        side_effect=ValueError("token exchange failed"),
+    ):
+        resp = client.get(
+            "/api/auth/link/callback/google?code=bad-code", headers=headers
+        )
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

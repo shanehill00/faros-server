@@ -12,5 +12,8 @@ class Settings(BaseSettings):
     base_url: str = "http://localhost:8000"
     google_client_id: str = ""
     google_client_secret: str = ""
+    google_auth_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    google_token_url: str = "https://oauth2.googleapis.com/token"
+    google_userinfo_url: str = "https://www.googleapis.com/oauth2/v2/userinfo"
 
     model_config = {"env_prefix": "FAROS_"}
