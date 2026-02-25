@@ -2,25 +2,45 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from faros_server.models.user import User, UserAuthMethod
 
+# Module-private: tracks the active connection for the current unit of work.
+_active_conn: ContextVar[AsyncSession] = ContextVar("_dao_conn")
+
 
 class UserDAO:
-    """Database operations for users and auth methods.
+    """Data access built once at startup with the connection pool.
 
-    Session management is an internal implementation detail.
-    Public methods accept only domain parameters.
+    Use transaction() to wrap a group of operations in one unit of work.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+    def __init__(self, pool: async_sessionmaker[AsyncSession]) -> None:
+        self._pool = pool
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[None]:
+        """Open a unit of work. All DAO calls inside share one connection."""
+        async with self._pool() as conn:
+            token = _active_conn.set(conn)
+            try:
+                yield
+            finally:
+                _active_conn.reset(token)
+
+    def _conn(self) -> AsyncSession:
+        """Return the current unit-of-work connection."""
+        return _active_conn.get()
 
     async def find_by_id(self, user_id: str) -> User | None:
         """Find a user by primary key."""
-        result = await self._session.execute(
+        result = await self._conn().execute(
             select(User).where(User.id == user_id)
         )
         return result.scalar_one_or_none()
@@ -29,7 +49,7 @@ class UserDAO:
         self, provider: str, provider_id: str
     ) -> UserAuthMethod | None:
         """Find an auth method by provider and provider_id."""
-        result = await self._session.execute(
+        result = await self._conn().execute(
             select(UserAuthMethod).where(
                 UserAuthMethod.provider == provider,
                 UserAuthMethod.provider_id == provider_id,
@@ -39,7 +59,7 @@ class UserDAO:
 
     async def count_users(self) -> int:
         """Return total number of users."""
-        result = await self._session.execute(
+        result = await self._conn().execute(
             select(func.count()).select_from(User)
         )
         return int(result.scalar_one())
@@ -58,8 +78,8 @@ class UserDAO:
             is_superuser=is_superuser,
             is_active=True,
         )
-        self._session.add(user)
-        await self._session.flush()
+        self._conn().add(user)
+        await self._conn().flush()
         return user
 
     async def create_auth_method(
@@ -77,20 +97,20 @@ class UserDAO:
             provider_id=provider_id,
             email=email,
         )
-        self._session.add(auth_method)
+        self._conn().add(auth_method)
         return auth_method
 
     async def get_auth_methods(self, user_id: str) -> list[UserAuthMethod]:
         """Return all auth methods for a user."""
-        result = await self._session.execute(
+        result = await self._conn().execute(
             select(UserAuthMethod).where(UserAuthMethod.user_id == user_id)
         )
         return list(result.scalars())
 
     async def commit(self) -> None:
         """Commit the current transaction."""
-        await self._session.commit()
+        await self._conn().commit()
 
     async def refresh(self, instance: User) -> None:
         """Refresh an instance from the database."""
-        await self._session.refresh(instance)
+        await self._conn().refresh(instance)

@@ -1,4 +1,4 @@
-"""FastAPI application factory and CLI entry point."""
+"""Litestar application factory and CLI entry point."""
 
 from __future__ import annotations
 
@@ -7,33 +7,62 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from litestar import Litestar
+from litestar.datastructures import State
+from litestar.di import Provide
 
+from faros_server.auth.deps import provide_current_user
 from faros_server.config import Settings
+from faros_server.controllers.auth import AuthController
+from faros_server.controllers.health import HealthController
+from faros_server.controllers.ws import websocket_endpoint
+from faros_server.dao.user_dao import UserDAO
 from faros_server.db import close_db, create_tables, init_db
-from faros_server.routers import auth, health, ws
+from faros_server.services.user_service import UserService
+
+
+def _build(settings: Settings) -> State:
+    """Factory/build phase: construct the full object graph once."""
+    pool = init_db(settings.database_url)
+    dao = UserDAO(pool)
+    svc = UserService(dao)
+    return State({"settings": settings, "dao": dao, "svc": svc})
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Initialize and tear down database on startup/shutdown."""
-    settings: Settings = app.state.settings
-    init_db(settings.database_url)
+async def lifespan(app: Litestar) -> AsyncIterator[None]:
+    """Create tables on startup, dispose engine on shutdown."""
     await create_tables()
     yield
     await close_db()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    """Create and configure the FastAPI application."""
+def _provide_svc(state: State) -> UserService:
+    """Provide the pre-built UserService from app state."""
+    svc: UserService = state.svc
+    return svc
+
+
+def _provide_settings(state: State) -> Settings:
+    """Provide the app settings from app state."""
+    settings: Settings = state.settings
+    return settings
+
+
+def create_app(settings: Settings | None = None) -> Litestar:
+    """Create and configure the Litestar application."""
     if settings is None:
         settings = Settings()
-    app = FastAPI(title="Faros Server", version="0.1.0", lifespan=lifespan)
-    app.state.settings = settings
-    app.include_router(health.router)
-    app.include_router(auth.router)
-    app.include_router(ws.router)
-    return app
+    return Litestar(
+        route_handlers=[HealthController, AuthController, websocket_endpoint],
+        state=_build(settings),
+        lifespan=[lifespan],
+        dependencies={
+            "user": Provide(provide_current_user),
+            "svc": Provide(_provide_svc, sync_to_thread=False),
+            "settings": Provide(_provide_settings, sync_to_thread=False),
+        },
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:

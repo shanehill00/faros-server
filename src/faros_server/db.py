@@ -1,6 +1,8 @@
-"""Async SQLAlchemy engine, session factory, and declarative base."""
+"""Async database engine and connection pool."""
 
-from collections.abc import AsyncIterator
+from __future__ import annotations
+
+from typing import Any
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -8,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import StaticPool
 
 
 class Base(DeclarativeBase):
@@ -15,14 +18,25 @@ class Base(DeclarativeBase):
 
 
 _engine = None
-_session_factory: async_sessionmaker[AsyncSession] | None = None
+_pool: async_sessionmaker[AsyncSession] | None = None
 
 
-def init_db(database_url: str) -> None:
-    """Create the async engine and session factory."""
-    global _engine, _session_factory
-    _engine = create_async_engine(database_url, echo=False)
-    _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
+def init_db(database_url: str) -> async_sessionmaker[AsyncSession]:
+    """Create the async engine and connection pool. Returns the pool."""
+    global _engine, _pool
+    kwargs: dict[str, Any] = {"echo": False}
+    if database_url == "sqlite+aiosqlite://":
+        kwargs["poolclass"] = StaticPool
+        kwargs["connect_args"] = {"check_same_thread": False}
+    _engine = create_async_engine(database_url, **kwargs)
+    _pool = async_sessionmaker(_engine, expire_on_commit=False)
+    return _pool
+
+
+def get_pool() -> async_sessionmaker[AsyncSession]:
+    """Return the connection pool. Call init_db() first."""
+    assert _pool is not None, "call init_db() first"
+    return _pool
 
 
 async def create_tables() -> None:
@@ -36,15 +50,8 @@ async def create_tables() -> None:
 
 async def close_db() -> None:
     """Dispose the engine."""
-    global _engine, _session_factory
+    global _engine, _pool
     if _engine is not None:
         await _engine.dispose()
         _engine = None
-        _session_factory = None
-
-
-async def get_session() -> AsyncIterator[AsyncSession]:
-    """Yield an async session for dependency injection."""
-    assert _session_factory is not None, "call init_db() first"
-    async with _session_factory() as session:
-        yield session
+        _pool = None

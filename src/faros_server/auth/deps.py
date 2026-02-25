@@ -1,74 +1,48 @@
-"""FastAPI dependencies for authentication and dependency injection."""
+"""Authentication helpers for extracting the current user from a request."""
 
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from litestar import Request
+from litestar.datastructures import State
+from litestar.exceptions import NotAuthorizedException
 
 from faros_server.auth.jwt import decode_token
-from faros_server.config import Settings
 from faros_server.dao.user_dao import UserDAO
-from faros_server.db import get_session
 from faros_server.models.user import User
-from faros_server.services.user_service import UserService
 
 
-def get_settings(request: Request) -> Settings:
-    """Retrieve settings from app state."""
-    settings: Settings = request.app.state.settings
-    return settings
-
-
-def get_user_dao(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> UserDAO:
-    """Request-scoped UserDAO. Session is an internal detail of the DAO."""
-    return UserDAO(session)
-
-
-def get_user_service(
-    dao: Annotated[UserDAO, Depends(get_user_dao)],
-) -> UserService:
-    """Request-scoped UserService wired to the DAO."""
-    return UserService(dao)
-
-
-async def get_current_user(
-    request: Request,
-    dao: Annotated[UserDAO, Depends(get_user_dao)],
+async def current_user_from_token(
+    token: str, secret_key: str, dao: UserDAO
 ) -> User:
-    """Extract and validate JWT bearer token, return the User.
+    """Validate a JWT token and return the User.
 
     Raises:
-        HTTPException: 401 if token is missing, invalid, or user not found.
+        NotAuthorizedException: If the token is invalid or user not found/inactive.
     """
-    settings: Settings = request.app.state.settings
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid Authorization header",
-        )
-    token = auth[len("Bearer "):]
     try:
-        payload = decode_token(token, settings.secret_key)
+        payload = decode_token(token, secret_key)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        ) from exc
+        raise NotAuthorizedException(detail="Invalid or expired token") from exc
     user_id = payload.get("sub")
     if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
-    user = await dao.find_by_id(user_id)
+        raise NotAuthorizedException(detail="Invalid token payload")
+    async with dao.transaction():
+        user = await dao.find_by_id(user_id)
     if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
-        )
+        raise NotAuthorizedException(detail="User not found or inactive")
     return user
+
+
+async def provide_current_user(
+    request: Request[object, object, State],
+) -> User:
+    """Litestar dependency — extract authenticated user from Authorization header."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise NotAuthorizedException(
+            detail="Missing or invalid Authorization header"
+        )
+    token = auth[len("Bearer "):]
+    settings = request.app.state.settings
+    dao: UserDAO = request.app.state.dao
+    return await current_user_from_token(token, settings.secret_key, dao)

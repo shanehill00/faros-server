@@ -1,12 +1,10 @@
 """Tests for health check endpoint."""
 
-import httpx
-import pytest
+from litestar.testing import TestClient
 
 
-@pytest.mark.asyncio
-async def test_health_returns_ok(client: httpx.AsyncClient) -> None:
+def test_health_returns_ok(client: TestClient) -> None:  # type: ignore[type-arg]
     """GET /api/health returns status ok."""
-    resp = await client.get("/api/health")
+    resp = client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}

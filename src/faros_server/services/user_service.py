@@ -8,7 +8,11 @@ from faros_server.models.user import User
 
 
 class UserService:
-    """User business logic — delegates all data access to DAO."""
+    """Built once at startup with its DAO pre-wired.
+
+    Each method wraps its DAO calls in a transaction — one unit of work
+    per service call. No database concepts in the public API.
+    """
 
     def __init__(self, dao: UserDAO) -> None:
         self._dao = dao
@@ -19,53 +23,55 @@ class UserService:
         Returning users get their name and avatar updated.
         First user in the system is automatically a superuser.
         """
-        auth_method = await self._dao.find_auth_method(
-            info.provider, info.provider_id
-        )
+        async with self._dao.transaction():
+            auth_method = await self._dao.find_auth_method(
+                info.provider, info.provider_id
+            )
 
-        if auth_method is not None:
-            user = await self._dao.find_by_id(auth_method.user_id)
-            if user is None:  # pragma: no cover — defensive
-                msg = f"User {auth_method.user_id} not found for auth method"
-                raise ValueError(msg)
-            user.name = info.name
-            user.avatar_url = info.avatar_url
-            auth_method.email = info.email
+            if auth_method is not None:
+                user = await self._dao.find_by_id(auth_method.user_id)
+                if user is None:  # pragma: no cover — defensive
+                    msg = f"User {auth_method.user_id} not found for auth method"
+                    raise ValueError(msg)
+                user.name = info.name
+                user.avatar_url = info.avatar_url
+                auth_method.email = info.email
+                await self._dao.commit()
+                return user
+
+            user_count = await self._dao.count_users()
+            is_first = user_count == 0
+
+            user = await self._dao.create_user(
+                name=info.name,
+                avatar_url=info.avatar_url,
+                is_superuser=is_first,
+            )
+            await self._dao.create_auth_method(
+                user_id=user.id,
+                provider=info.provider,
+                provider_id=info.provider_id,
+                email=info.email,
+            )
             await self._dao.commit()
+            await self._dao.refresh(user)
             return user
-
-        user_count = await self._dao.count_users()
-        is_first = user_count == 0
-
-        user = await self._dao.create_user(
-            name=info.name,
-            avatar_url=info.avatar_url,
-            is_superuser=is_first,
-        )
-        await self._dao.create_auth_method(
-            user_id=user.id,
-            provider=info.provider,
-            provider_id=info.provider_id,
-            email=info.email,
-        )
-        await self._dao.commit()
-        await self._dao.refresh(user)
-        return user
 
     async def load_user_response(self, user: User) -> dict[str, object]:
         """Build a user response dict with auth methods."""
-        methods = await self._dao.get_auth_methods(user.id)
-        return {
-            "id": user.id,
-            "name": user.name,
-            "avatar_url": user.avatar_url,
-            "is_superuser": user.is_superuser,
-            "is_active": user.is_active,
-            "auth_methods": [
-                {"provider": m.provider, "email": m.email}
-                for m in methods
-            ],
-        }
+        async with self._dao.transaction():
+            methods = await self._dao.get_auth_methods(user.id)
+            return {
+                "id": user.id,
+                "name": user.name,
+                "avatar_url": user.avatar_url,
+                "is_superuser": user.is_superuser,
+                "is_active": user.is_active,
+                "auth_methods": [
+                    {"provider": m.provider, "email": m.email}
+                    for m in methods
+                ],
+            }
 
     async def link_auth_method(
         self, user: User, info: OAuthUserInfo
@@ -75,18 +81,30 @@ class UserService:
         Raises:
             ValueError: If the provider account is already linked.
         """
-        existing = await self._dao.find_auth_method(
-            info.provider, info.provider_id
-        )
-        if existing is not None:
-            msg = "This provider account is already linked to a user"
-            raise ValueError(msg)
+        async with self._dao.transaction():
+            existing = await self._dao.find_auth_method(
+                info.provider, info.provider_id
+            )
+            if existing is not None:
+                msg = "This provider account is already linked to a user"
+                raise ValueError(msg)
 
-        await self._dao.create_auth_method(
-            user_id=user.id,
-            provider=info.provider,
-            provider_id=info.provider_id,
-            email=info.email,
-        )
-        await self._dao.commit()
-        return await self.load_user_response(user)
+            await self._dao.create_auth_method(
+                user_id=user.id,
+                provider=info.provider,
+                provider_id=info.provider_id,
+                email=info.email,
+            )
+            await self._dao.commit()
+            methods = await self._dao.get_auth_methods(user.id)
+            return {
+                "id": user.id,
+                "name": user.name,
+                "avatar_url": user.avatar_url,
+                "is_superuser": user.is_superuser,
+                "is_active": user.is_active,
+                "auth_methods": [
+                    {"provider": m.provider, "email": m.email}
+                    for m in methods
+                ],
+            }

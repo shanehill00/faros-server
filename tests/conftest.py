@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import Iterator
 
-import httpx
 import pytest
+from litestar.testing import TestClient
 
 from faros_server.app import create_app
 from faros_server.auth.jwt import create_token
 from faros_server.config import Settings
-from faros_server.db import close_db, create_tables, get_session, init_db
+from faros_server.db import get_pool
 from faros_server.models.user import User, UserAuthMethod
 
 
@@ -26,22 +25,11 @@ def settings() -> Settings:
 
 
 @pytest.fixture()
-async def client(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
-    """Async HTTP client wired to the test app with lifespan managed."""
+def client(settings: Settings) -> Iterator[TestClient]:  # type: ignore[type-arg]
+    """Sync test client wired to the test app."""
     app = create_app(settings)
-
-    @asynccontextmanager
-    async def _lifespan() -> AsyncIterator[None]:
-        init_db(settings.database_url)
-        await create_tables()
-        yield
-        await close_db()
-
-    async with _lifespan(), httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
-        base_url="http://test",
-    ) as ac:
-        yield ac
+    with TestClient(app=app) as tc:
+        yield tc
 
 
 async def create_test_user(
@@ -52,25 +40,25 @@ async def create_test_user(
     email: str = "test@faros.dev",
 ) -> User:
     """Create a user with an auth method directly in the database."""
-    async for session in get_session():
+    pool = get_pool()
+    async with pool() as db:
         user = User(
             name=name,
             is_superuser=is_superuser,
             is_active=True,
         )
-        session.add(user)
-        await session.flush()
+        db.add(user)
+        await db.flush()
         auth_method = UserAuthMethod(
             user_id=user.id,
             provider=provider,
             provider_id=provider_id,
             email=email,
         )
-        session.add(auth_method)
-        await session.commit()
-        await session.refresh(user)
+        db.add(auth_method)
+        await db.commit()
+        await db.refresh(user)
         return user
-    raise RuntimeError("No session available")
 
 
 async def auth_headers(
