@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from faros_server.auth.jwt import decode_token
 from faros_server.config import Settings
+from faros_server.dao.user_dao import UserDAO
 from faros_server.db import get_session
 from faros_server.models.user import User
 
@@ -50,8 +50,8 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
-    result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    dao = UserDAO(session)
+    user = await dao.find_by_id(user_id)
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
