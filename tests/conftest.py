@@ -8,10 +8,12 @@ import pytest
 from litestar.testing import TestClient
 
 from faros_server.app import create_app
-from faros_server.auth.jwt import create_token
 from faros_server.config import Settings
 from faros_server.db import get_pool
 from faros_server.models.user import User, UserAuthMethod
+from faros_server.utils.jwt import JWTManager
+
+_test_jwt = JWTManager(secret_key="test-secret-key", expire_minutes=30)
 
 
 @pytest.fixture()
@@ -63,10 +65,9 @@ async def create_test_user(
 
 async def auth_headers(
     user: User | None = None,
-    secret: str = "test-secret-key",
 ) -> dict[str, str]:
     """Generate JWT auth headers for a user."""
     if user is None:
         user = await create_test_user()
-    token = create_token({"sub": user.id}, secret)
+    token = _test_jwt.create_token({"sub": user.id})
     return {"Authorization": f"Bearer {token}"}

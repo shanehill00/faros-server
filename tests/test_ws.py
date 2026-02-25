@@ -6,10 +6,12 @@ import pytest
 from litestar.testing import TestClient
 
 from faros_server.app import create_app
-from faros_server.auth.jwt import create_token
 from faros_server.config import Settings
 from faros_server.db import get_pool
+from faros_server.utils.jwt import JWTManager
 from tests.conftest import create_test_user
+
+_test_jwt = JWTManager(secret_key="test-secret-key", expire_minutes=30)
 
 
 @pytest.fixture()
@@ -34,7 +36,7 @@ def ws_client(ws_settings: Settings) -> TestClient:  # type: ignore[type-arg]
 async def test_ws_auth_and_me(ws_client: TestClient) -> None:  # type: ignore[type-arg]
     """WebSocket: authenticate then call auth.me."""
     user = await create_test_user()
-    token = create_token({"sub": user.id}, "test-secret-key")
+    token = _test_jwt.create_token({"sub": user.id})
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"action": "auth.me", "token": token})
@@ -48,7 +50,7 @@ async def test_ws_auth_and_me(ws_client: TestClient) -> None:  # type: ignore[ty
 async def test_ws_auth_only(ws_client: TestClient) -> None:  # type: ignore[type-arg]
     """WebSocket: authenticate without an action returns ok."""
     user = await create_test_user()
-    token = create_token({"sub": user.id}, "test-secret-key")
+    token = _test_jwt.create_token({"sub": user.id})
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"token": token})
@@ -80,7 +82,7 @@ async def test_ws_bad_token(ws_client: TestClient) -> None:  # type: ignore[type
 async def test_ws_unknown_action(ws_client: TestClient) -> None:  # type: ignore[type-arg]
     """WebSocket: unknown action returns 400."""
     user = await create_test_user()
-    token = create_token({"sub": user.id}, "test-secret-key")
+    token = _test_jwt.create_token({"sub": user.id})
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"action": "bogus.action", "token": token})
@@ -93,7 +95,7 @@ async def test_ws_unknown_action(ws_client: TestClient) -> None:  # type: ignore
 async def test_ws_multiple_actions(ws_client: TestClient) -> None:  # type: ignore[type-arg]
     """WebSocket: authenticate once, send multiple actions on same connection."""
     user = await create_test_user()
-    token = create_token({"sub": user.id}, "test-secret-key")
+    token = _test_jwt.create_token({"sub": user.id})
 
     with ws_client.websocket_connect("/ws") as ws:
         # Auth first
@@ -114,7 +116,7 @@ async def test_ws_multiple_actions(ws_client: TestClient) -> None:  # type: igno
 @pytest.mark.asyncio
 async def test_ws_token_no_sub(ws_client: TestClient) -> None:  # type: ignore[type-arg]
     """WebSocket: token without sub claim is rejected."""
-    token = create_token({"foo": "bar"}, "test-secret-key")
+    token = _test_jwt.create_token({"foo": "bar"})
 
     with ws_client.websocket_connect("/ws") as ws:
         ws.send_json({"action": "auth.me", "token": token})
@@ -130,7 +132,7 @@ async def test_ws_user_deactivated_mid_session(ws_client: TestClient) -> None:  
     from faros_server.models.user import User
 
     user = await create_test_user(email="ws-deact@faros.dev", provider_id="g-ws-deact")
-    token = create_token({"sub": user.id}, "test-secret-key")
+    token = _test_jwt.create_token({"sub": user.id})
 
     with ws_client.websocket_connect("/ws") as ws:
         # Authenticate successfully
@@ -159,7 +161,7 @@ async def test_ws_inactive_user(ws_client: TestClient) -> None:  # type: ignore[
     from faros_server.models.user import User
 
     user = await create_test_user(email="ws-inactive@faros.dev", provider_id="g-ws-inact")
-    token = create_token({"sub": user.id}, "test-secret-key")
+    token = _test_jwt.create_token({"sub": user.id})
 
     # Deactivate after token is created
     async with get_pool()() as db:

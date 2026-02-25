@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import secrets
 
-from faros_server.auth.jwt import create_token
-from faros_server.auth.oauth import GoogleOAuthClient
 from faros_server.models.user import User
 from faros_server.services.user_service import UserService
+from faros_server.utils.jwt import JWTManager
+from faros_server.utils.oauth import GoogleOAuthClient
 
 
 class UnsupportedProviderError(Exception):
@@ -40,13 +40,11 @@ class AuthResource:
         *,
         svc: UserService,
         oauth: GoogleOAuthClient,
-        secret_key: str,
-        token_expire_minutes: int,
+        jwt: JWTManager,
     ) -> None:
         self._svc = svc
         self._oauth = oauth
-        self._secret_key = secret_key
-        self._token_expire_minutes = token_expire_minutes
+        self._jwt = jwt
 
     def login_url(self, provider: str) -> str:
         """Build the OAuth authorization URL for the given provider.
@@ -81,11 +79,7 @@ class AuthResource:
         user = await self._svc.find_or_create_user(info)
         if not user.is_active:
             raise AuthError("User account is inactive")
-        token = create_token(
-            {"sub": user.id},
-            self._secret_key,
-            expire_minutes=self._token_expire_minutes,
-        )
+        token = self._jwt.create_token({"sub": user.id})
         return {"access_token": token, "token_type": "bearer"}
 
     async def me(self, user: User) -> dict[str, object]:
@@ -132,6 +126,6 @@ class AuthResource:
 
 
 def _validate_provider(provider: str) -> None:
-    """Raise UnsupportedProvider if the provider is not in the supported set."""
+    """Raise UnsupportedProviderError if the provider is not in the supported set."""
     if provider not in _SUPPORTED_PROVIDERS:
         raise UnsupportedProviderError(f"Unsupported provider: {provider}")

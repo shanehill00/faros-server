@@ -8,17 +8,17 @@ from litestar import WebSocket, websocket
 from litestar.datastructures import State
 from litestar.exceptions import WebSocketDisconnect
 
-from faros_server.auth.jwt import current_user_from_token
 from faros_server.dao.user_dao import UserDAO
 from faros_server.resources.auth import AuthResource
+from faros_server.utils.jwt import JWTManager
 
 
 async def _authenticate(
-    token: str, secret_key: str, dao: UserDAO
+    token: str, jwt: JWTManager, dao: UserDAO
 ) -> dict[str, Any] | None:
     """Validate a JWT token and return context, or None on failure."""
     try:
-        user = await current_user_from_token(token, secret_key, dao)
+        user = await jwt.resolve_user(token, dao)
     except ValueError:
         return None
     return {"user_id": user.id, "user": user}
@@ -46,7 +46,7 @@ async def websocket_endpoint(socket: WebSocket[object, object, State]) -> None:
     """Handle WebSocket connections with JSON message dispatch."""
     await socket.accept()
 
-    settings = socket.app.state.settings
+    jwt: JWTManager = socket.app.state.jwt
     dao: UserDAO = socket.app.state.dao
     auth: AuthResource = socket.app.state.auth
     ctx: dict[str, Any] | None = None
@@ -65,7 +65,7 @@ async def websocket_endpoint(socket: WebSocket[object, object, State]) -> None:
                     )
                     continue
 
-                ctx = await _authenticate(token, settings.secret_key, dao)
+                ctx = await _authenticate(token, jwt, dao)
 
                 if ctx is None:
                     await socket.send_json(

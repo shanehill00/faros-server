@@ -12,8 +12,6 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.exceptions import NotAuthorizedException
 
-from faros_server.auth.jwt import current_user_from_token
-from faros_server.auth.oauth import GoogleOAuthClient
 from faros_server.config import Settings
 from faros_server.controllers.auth import AuthController
 from faros_server.controllers.health import HealthController
@@ -24,19 +22,26 @@ from faros_server.models.user import User
 from faros_server.resources.auth import AuthResource
 from faros_server.resources.health import HealthResource
 from faros_server.services.user_service import UserService
+from faros_server.utils.jwt import JWTManager
+from faros_server.utils.oauth import GoogleOAuthClient
 
 
 def _build(settings: Settings) -> State:
     """Factory/build phase: construct the full object graph once.
 
     pool → dao → svc ─┐
-                       ├→ auth_resource
-    oauth ─────────────┘
-    health_resource (standalone)
+                       ├→ AuthResource
+    oauth ─────────────┤
+    jwt ───────────────┘
+    HealthResource (standalone)
     """
     pool = init_db(settings.database_url)
     dao = UserDAO(pool)
     svc = UserService(dao)
+    jwt = JWTManager(
+        secret_key=settings.secret_key,
+        expire_minutes=settings.token_expire_minutes,
+    )
     oauth = GoogleOAuthClient(
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
@@ -46,15 +51,10 @@ def _build(settings: Settings) -> State:
         userinfo_url=settings.google_userinfo_url,
     )
     health = HealthResource()
-    auth = AuthResource(
-        svc=svc,
-        oauth=oauth,
-        secret_key=settings.secret_key,
-        token_expire_minutes=settings.token_expire_minutes,
-    )
+    auth = AuthResource(svc=svc, oauth=oauth, jwt=jwt)
     return State({
-        "settings": settings,
         "dao": dao,
+        "jwt": jwt,
         "health": health,
         "auth": auth,
     })
@@ -78,10 +78,10 @@ async def provide_current_user(
             detail="Missing or invalid Authorization header"
         )
     token = header[len("Bearer "):]
-    settings = request.app.state.settings
+    jwt: JWTManager = request.app.state.jwt
     dao: UserDAO = request.app.state.dao
     try:
-        return await current_user_from_token(token, settings.secret_key, dao)
+        return await jwt.resolve_user(token, dao)
     except ValueError as exc:
         raise NotAuthorizedException(detail=str(exc)) from exc
 

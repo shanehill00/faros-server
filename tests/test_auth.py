@@ -7,9 +7,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from litestar.testing import TestClient
 
-from faros_server.auth.jwt import create_token
-from faros_server.auth.oauth import OAuthUserInfo
+from faros_server.utils.jwt import JWTManager
+from faros_server.utils.oauth import OAuthUserInfo
 from tests.conftest import auth_headers, create_test_user
+
+_test_jwt = JWTManager(secret_key="test-secret-key", expire_minutes=30)
 
 
 def _oauth(client: TestClient) -> object:  # type: ignore[type-arg]
@@ -347,7 +349,7 @@ def test_me_bearer_prefix_required(client: TestClient) -> None:  # type: ignore[
 
 def test_me_token_no_sub_claim(client: TestClient) -> None:  # type: ignore[type-arg]
     """Token without 'sub' claim returns 401."""
-    token = create_token({"foo": "bar"}, "test-secret-key")
+    token = _test_jwt.create_token({"foo": "bar"})
     resp = client.get(
         "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
     )
@@ -358,7 +360,7 @@ def test_me_token_no_sub_claim(client: TestClient) -> None:  # type: ignore[type
 async def test_me_token_user_deleted(client: TestClient) -> None:  # type: ignore[type-arg]
     """Token for nonexistent user returns 401."""
     await create_test_user()
-    token = create_token({"sub": "nonexistent-id-000"}, "test-secret-key")
+    token = _test_jwt.create_token({"sub": "nonexistent-id-000"})
     resp = client.get(
         "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
     )

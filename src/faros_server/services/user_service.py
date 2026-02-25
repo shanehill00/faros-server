@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from faros_server.auth.oauth import OAuthUserInfo
 from faros_server.dao.user_dao import UserDAO
 from faros_server.models.user import User
+from faros_server.utils.oauth import OAuthUserInfo
 
 
 class UserService:
