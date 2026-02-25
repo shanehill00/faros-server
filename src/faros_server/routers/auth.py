@@ -7,14 +7,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from faros_server.auth.deps import get_current_user, get_settings
+from faros_server.auth.deps import get_current_user, get_settings, get_user_service
 from faros_server.auth.jwt import create_token
 from faros_server.auth.oauth import OAuthUserInfo, google_authorization_url, google_exchange_code
 from faros_server.config import Settings
-from faros_server.dao.user_dao import UserDAO
-from faros_server.db import get_session
 from faros_server.models.user import User
 from faros_server.schemas.user import Token, UserRead
 from faros_server.services.user_service import UserService
@@ -22,13 +19,6 @@ from faros_server.services.user_service import UserService
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _SUPPORTED_PROVIDERS = {"google"}
-
-
-def _get_user_service(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> UserService:
-    """Build a UserService wired to the request's DB session."""
-    return UserService(UserDAO(session))
 
 
 def _redirect_uri(settings: Settings, provider: str) -> str:
@@ -101,7 +91,7 @@ async def login(
 async def callback(
     provider: str,
     code: str,
-    svc: Annotated[UserService, Depends(_get_user_service)],
+    svc: Annotated[UserService, Depends(get_user_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, str]:
     """Handle OAuth callback: exchange code, find/create user, issue JWT."""
@@ -147,7 +137,7 @@ async def link_callback(
     provider: str,
     code: str,
     user: Annotated[User, Depends(get_current_user)],
-    svc: Annotated[UserService, Depends(_get_user_service)],
+    svc: Annotated[UserService, Depends(get_user_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
     """Handle OAuth link callback: add auth method to existing user."""
@@ -168,7 +158,7 @@ async def link_callback(
 @router.get("/me", response_model=UserRead)
 async def me(
     user: Annotated[User, Depends(get_current_user)],
-    svc: Annotated[UserService, Depends(_get_user_service)],
+    svc: Annotated[UserService, Depends(get_user_service)],
 ) -> dict[str, object]:
     """Return the current authenticated user with linked auth methods."""
     return await svc.load_user_response(user)
