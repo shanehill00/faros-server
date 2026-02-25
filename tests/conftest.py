@@ -12,7 +12,7 @@ from faros_server.app import create_app
 from faros_server.auth.jwt import create_token
 from faros_server.config import Settings
 from faros_server.db import close_db, create_tables, get_session, init_db
-from faros_server.models.user import User
+from faros_server.models.user import User, UserAuthMethod
 
 
 @pytest.fixture()
@@ -45,23 +45,28 @@ async def client(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
 
 
 async def create_test_user(
-    email: str = "test@faros.dev",
     name: str = "Test User",
+    is_superuser: bool = True,
     provider: str = "google",
     provider_id: str = "google-123",
-    is_superuser: bool = True,
+    email: str = "test@faros.dev",
 ) -> User:
-    """Create a user directly in the database."""
+    """Create a user with an auth method directly in the database."""
     async for session in get_session():
         user = User(
-            email=email,
             name=name,
-            provider=provider,
-            provider_id=provider_id,
             is_superuser=is_superuser,
             is_active=True,
         )
         session.add(user)
+        await session.flush()
+        auth_method = UserAuthMethod(
+            user_id=user.id,
+            provider=provider,
+            provider_id=provider_id,
+            email=email,
+        )
+        session.add(auth_method)
         await session.commit()
         await session.refresh(user)
         return user

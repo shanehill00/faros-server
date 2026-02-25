@@ -30,9 +30,7 @@ async def test_models_create_agent() -> None:
     await create_tables()
     async for session in get_session():
         user = User(
-            email="test@example.com",
-            provider="google",
-            provider_id="g-123",
+            name="Test User",
             is_superuser=False,
         )
         session.add(user)
