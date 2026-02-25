@@ -1,4 +1,4 @@
-"""User model for operator authentication."""
+"""User model for operator authentication via OAuth SSO."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from faros_server.db import Base
 
 
 class User(Base):
-    """Operator account."""
+    """Operator account, created on first SSO login."""
 
     __tablename__ = "users"
 
@@ -19,6 +19,9 @@ class User(Base):
         String(36), primary_key=True, default=lambda: uuid.uuid4().hex
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32))  # "google", "github", etc.
+    provider_id: Mapped[str] = mapped_column(String(255), index=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

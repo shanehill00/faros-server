@@ -31,7 +31,8 @@ async def test_models_create_agent() -> None:
     async for session in get_session():
         user = User(
             email="test@example.com",
-            hashed_password="fakehash",
+            provider="google",
+            provider_id="g-123",
             is_superuser=False,
         )
         session.add(user)

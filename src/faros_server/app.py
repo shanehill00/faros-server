@@ -11,7 +11,7 @@ from fastapi import FastAPI
 
 from faros_server.config import Settings
 from faros_server.db import close_db, create_tables, init_db
-from faros_server.routers import health
+from faros_server.routers import auth, health
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Faros Server", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.include_router(health.router)
+    app.include_router(auth.router)
     return app
 
 
