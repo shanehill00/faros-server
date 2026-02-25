@@ -27,6 +27,8 @@ def init_db(database_url: str) -> None:
 
 async def create_tables() -> None:
     """Create all tables from registered models."""
+    import faros_server.models  # noqa: F401
+
     assert _engine is not None, "call init_db() first"
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
