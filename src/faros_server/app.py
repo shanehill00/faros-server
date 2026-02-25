@@ -13,7 +13,7 @@ from litestar.di import Provide
 from litestar.exceptions import NotAuthorizedException
 
 from faros_server.clients.google_oauth_client import GoogleOAuthClient
-from faros_server.config import Settings, load_settings
+from faros_server.config import ConfigLoader, Settings
 from faros_server.controllers.auth import AuthController
 from faros_server.controllers.health import HealthController
 from faros_server.dao.user_dao import UserDAO
@@ -102,7 +102,7 @@ def _provide_health(state: State) -> HealthResource:
 def create_app(settings: Settings | None = None) -> Litestar:
     """Create and configure the Litestar application."""
     if settings is None:
-        settings = load_settings()
+        settings = ConfigLoader.load_settings()
     return Litestar(
         route_handlers=[HealthController, AuthController],
         state=_build(settings),
