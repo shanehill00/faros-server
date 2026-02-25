@@ -1,4 +1,4 @@
-"""OAuth provider client — constructed once at startup with all config."""
+"""Google OAuth2 client — constructed once at startup with all config."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 import httpx
+
+PROVIDER_NAME = "google"
 
 
 @dataclass
@@ -40,17 +42,24 @@ class GoogleOAuthClient:
         self._userinfo_url = userinfo_url
 
     @property
+    def provider(self) -> str:
+        """The provider name this client handles."""
+        return PROVIDER_NAME
+
+    @property
     def is_configured(self) -> bool:
         """True if client_id is set (minimum for OAuth to work)."""
         return bool(self._client_id)
 
-    def callback_uri(self, provider: str) -> str:
-        """Build the OAuth callback URL for login."""
-        return f"{self._base_url}/api/auth/callback/{provider}"
+    @property
+    def callback_uri(self) -> str:
+        """The OAuth callback URL for login."""
+        return f"{self._base_url}/api/auth/callback/{PROVIDER_NAME}"
 
-    def link_callback_uri(self, provider: str) -> str:
-        """Build the OAuth callback URL for account linking."""
-        return f"{self._base_url}/api/auth/link/callback/{provider}"
+    @property
+    def link_callback_uri(self) -> str:
+        """The OAuth callback URL for account linking."""
+        return f"{self._base_url}/api/auth/link/callback/{PROVIDER_NAME}"
 
     def authorization_url(self, redirect_uri: str, state: str) -> str:
         """Build the Google OAuth2 authorization URL."""
@@ -107,7 +116,7 @@ class GoogleOAuthClient:
             raise ValueError("Google did not return id or email")
 
         return OAuthUserInfo(
-            provider="google",
+            provider=PROVIDER_NAME,
             provider_id=str(provider_id),
             email=email,
             name=userinfo.get("name"),

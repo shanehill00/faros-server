@@ -58,7 +58,7 @@ class AuthResource:
             raise OAuthNotConfiguredError("Google OAuth not configured")
         state = secrets.token_urlsafe(32)
         return self._oauth_client.authorization_url(
-            redirect_uri=self._oauth_client.callback_uri(provider),
+            redirect_uri=self._oauth_client.callback_uri,
             state=state,
         )
 
@@ -72,7 +72,7 @@ class AuthResource:
         _validate_provider(provider)
         try:
             info = await self._oauth_client.exchange_code(
-                code=code, redirect_uri=self._oauth_client.callback_uri(provider),
+                code=code, redirect_uri=self._oauth_client.callback_uri,
             )
         except ValueError as error:
             raise AuthError(str(error)) from error
@@ -98,7 +98,7 @@ class AuthResource:
             raise OAuthNotConfiguredError("Google OAuth not configured")
         state = secrets.token_urlsafe(32)
         return self._oauth_client.authorization_url(
-            redirect_uri=self._oauth_client.link_callback_uri(provider),
+            redirect_uri=self._oauth_client.link_callback_uri,
             state=state,
         )
 
@@ -115,7 +115,7 @@ class AuthResource:
         _validate_provider(provider)
         try:
             info = await self._oauth_client.exchange_code(
-                code=code, redirect_uri=self._oauth_client.link_callback_uri(provider),
+                code=code, redirect_uri=self._oauth_client.link_callback_uri,
             )
         except ValueError as error:
             raise AuthError(str(error)) from error
