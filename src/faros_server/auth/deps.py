@@ -1,4 +1,4 @@
-"""FastAPI dependencies for authentication."""
+"""FastAPI dependencies for authentication and dependency injection."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from faros_server.auth.jwt import decode_token
 from faros_server.config import Settings
-from faros_server.dao.user_dao import user_dao
+from faros_server.dao.user_dao import UserDAO
 from faros_server.db import get_session
 from faros_server.models.user import User
 from faros_server.services.user_service import UserService
@@ -21,16 +21,23 @@ def get_settings(request: Request) -> Settings:
     return settings
 
 
-def get_user_service(
+def get_user_dao(
     session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserDAO:
+    """Request-scoped UserDAO. Session is an internal detail of the DAO."""
+    return UserDAO(session)
+
+
+def get_user_service(
+    dao: Annotated[UserDAO, Depends(get_user_dao)],
 ) -> UserService:
-    """Build a request-scoped UserService."""
-    return UserService(session)
+    """Request-scoped UserService wired to the DAO."""
+    return UserService(dao)
 
 
 async def get_current_user(
     request: Request,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    dao: Annotated[UserDAO, Depends(get_user_dao)],
 ) -> User:
     """Extract and validate JWT bearer token, return the User.
 
@@ -58,7 +65,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
-    user = await user_dao.find_by_id(session, user_id)
+    user = await dao.find_by_id(user_id)
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

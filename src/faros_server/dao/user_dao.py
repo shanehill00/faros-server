@@ -9,23 +9,27 @@ from faros_server.models.user import User, UserAuthMethod
 
 
 class UserDAO:
-    """Stateless query methods for users and auth methods.
+    """Database operations for users and auth methods.
 
-    Instantiated once and reused across requests. Session is passed per call.
+    Session management is an internal implementation detail.
+    Public methods accept only domain parameters.
     """
 
-    async def find_by_id(self, session: AsyncSession, user_id: str) -> User | None:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def find_by_id(self, user_id: str) -> User | None:
         """Find a user by primary key."""
-        result = await session.execute(
+        result = await self._session.execute(
             select(User).where(User.id == user_id)
         )
         return result.scalar_one_or_none()
 
     async def find_auth_method(
-        self, session: AsyncSession, provider: str, provider_id: str
+        self, provider: str, provider_id: str
     ) -> UserAuthMethod | None:
         """Find an auth method by provider and provider_id."""
-        result = await session.execute(
+        result = await self._session.execute(
             select(UserAuthMethod).where(
                 UserAuthMethod.provider == provider,
                 UserAuthMethod.provider_id == provider_id,
@@ -33,16 +37,15 @@ class UserDAO:
         )
         return result.scalar_one_or_none()
 
-    async def count_users(self, session: AsyncSession) -> int:
+    async def count_users(self) -> int:
         """Return total number of users."""
-        result = await session.execute(
+        result = await self._session.execute(
             select(func.count()).select_from(User)
         )
         return int(result.scalar_one())
 
     async def create_user(
         self,
-        session: AsyncSession,
         *,
         name: str | None,
         avatar_url: str | None,
@@ -55,13 +58,12 @@ class UserDAO:
             is_superuser=is_superuser,
             is_active=True,
         )
-        session.add(user)
-        await session.flush()
+        self._session.add(user)
+        await self._session.flush()
         return user
 
     async def create_auth_method(
         self,
-        session: AsyncSession,
         *,
         user_id: str,
         provider: str,
@@ -75,18 +77,20 @@ class UserDAO:
             provider_id=provider_id,
             email=email,
         )
-        session.add(auth_method)
+        self._session.add(auth_method)
         return auth_method
 
-    async def get_auth_methods(
-        self, session: AsyncSession, user_id: str
-    ) -> list[UserAuthMethod]:
+    async def get_auth_methods(self, user_id: str) -> list[UserAuthMethod]:
         """Return all auth methods for a user."""
-        result = await session.execute(
+        result = await self._session.execute(
             select(UserAuthMethod).where(UserAuthMethod.user_id == user_id)
         )
         return list(result.scalars())
 
+    async def commit(self) -> None:
+        """Commit the current transaction."""
+        await self._session.commit()
 
-#: Module-level singleton — reused across all requests.
-user_dao = UserDAO()
+    async def refresh(self, instance: User) -> None:
+        """Refresh an instance from the database."""
+        await self._session.refresh(instance)
