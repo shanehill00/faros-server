@@ -7,7 +7,7 @@ from litestar.testing import TestClient
 
 from faros_server.app import create_app
 from faros_server.config import Settings
-from faros_server.utils.db import get_pool
+from faros_server.utils.db import Database
 from faros_server.utils.jwt import JWTManager
 from tests.conftest import create_test_user
 
@@ -28,8 +28,8 @@ def ws_settings() -> Settings:
 def ws_client(ws_settings: Settings) -> TestClient:  # type: ignore[type-arg]
     """Test client for WebSocket tests — lifespan handles init_db/create_tables."""
     app = create_app(ws_settings)
-    with TestClient(app=app) as tc:
-        yield tc  # type: ignore[misc]
+    with TestClient(app=app) as test_client:
+        yield test_client  # type: ignore[misc]
 
 
 @pytest.mark.asyncio
@@ -38,12 +38,12 @@ async def test_ws_auth_and_me(ws_client: TestClient) -> None:  # type: ignore[ty
     user = await create_test_user()
     token = _test_jwt.create_token({"sub": user.id})
 
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"action": "auth.me", "token": token})
-        resp = ws.receive_json()
-        assert resp["action"] == "auth.me"
-        assert resp["data"]["name"] == "Test User"
-        assert len(resp["data"]["auth_methods"]) == 1
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"action": "auth.me", "token": token})
+        response = websocket.receive_json()
+        assert response["action"] == "auth.me"
+        assert response["data"]["name"] == "Test User"
+        assert len(response["data"]["auth_methods"]) == 1
 
 
 @pytest.mark.asyncio
@@ -52,30 +52,30 @@ async def test_ws_auth_only(ws_client: TestClient) -> None:  # type: ignore[type
     user = await create_test_user()
     token = _test_jwt.create_token({"sub": user.id})
 
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"token": token})
-        resp = ws.receive_json()
-        assert resp["action"] == "auth"
-        assert resp["data"]["status"] == "ok"
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"token": token})
+        response = websocket.receive_json()
+        assert response["action"] == "auth"
+        assert response["data"]["status"] == "ok"
 
 
 @pytest.mark.asyncio
 async def test_ws_no_token(ws_client: TestClient) -> None:  # type: ignore[type-arg]
     """WebSocket: first message without token returns 401."""
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"action": "auth.me"})
-        resp = ws.receive_json()
-        assert resp["error"]["code"] == 401
-        assert resp["error"]["detail"] == "Token required"
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"action": "auth.me"})
+        response = websocket.receive_json()
+        assert response["error"]["code"] == 401
+        assert response["error"]["detail"] == "Token required"
 
 
 @pytest.mark.asyncio
 async def test_ws_bad_token(ws_client: TestClient) -> None:  # type: ignore[type-arg]
     """WebSocket: invalid token closes connection."""
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"action": "auth.me", "token": "bad.token.here"})
-        resp = ws.receive_json()
-        assert resp["error"]["code"] == 401
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"action": "auth.me", "token": "bad.token.here"})
+        response = websocket.receive_json()
+        assert response["error"]["code"] == 401
 
 
 @pytest.mark.asyncio
@@ -84,11 +84,11 @@ async def test_ws_unknown_action(ws_client: TestClient) -> None:  # type: ignore
     user = await create_test_user()
     token = _test_jwt.create_token({"sub": user.id})
 
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"action": "bogus.action", "token": token})
-        resp = ws.receive_json()
-        assert resp["action"] == "bogus.action"
-        assert resp["error"]["code"] == 400
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"action": "bogus.action", "token": token})
+        response = websocket.receive_json()
+        assert response["action"] == "bogus.action"
+        assert response["error"]["code"] == 400
 
 
 @pytest.mark.asyncio
@@ -97,20 +97,18 @@ async def test_ws_multiple_actions(ws_client: TestClient) -> None:  # type: igno
     user = await create_test_user()
     token = _test_jwt.create_token({"sub": user.id})
 
-    with ws_client.websocket_connect("/ws") as ws:
-        # Auth first
-        ws.send_json({"token": token})
-        resp = ws.receive_json()
-        assert resp["data"]["status"] == "ok"
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"token": token})
+        response = websocket.receive_json()
+        assert response["data"]["status"] == "ok"
 
-        # Then call me twice
-        ws.send_json({"action": "auth.me"})
-        resp = ws.receive_json()
-        assert resp["data"]["name"] == "Test User"
+        websocket.send_json({"action": "auth.me"})
+        response = websocket.receive_json()
+        assert response["data"]["name"] == "Test User"
 
-        ws.send_json({"action": "auth.me"})
-        resp = ws.receive_json()
-        assert resp["data"]["name"] == "Test User"
+        websocket.send_json({"action": "auth.me"})
+        response = websocket.receive_json()
+        assert response["data"]["name"] == "Test User"
 
 
 @pytest.mark.asyncio
@@ -118,10 +116,10 @@ async def test_ws_token_no_sub(ws_client: TestClient) -> None:  # type: ignore[t
     """WebSocket: token without sub claim is rejected."""
     token = _test_jwt.create_token({"foo": "bar"})
 
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"action": "auth.me", "token": token})
-        resp = ws.receive_json()
-        assert resp["error"]["code"] == 401
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"action": "auth.me", "token": token})
+        response = websocket.receive_json()
+        assert response["error"]["code"] == 401
 
 
 @pytest.mark.asyncio
@@ -134,23 +132,20 @@ async def test_ws_user_deactivated_mid_session(ws_client: TestClient) -> None:  
     user = await create_test_user(email="ws-deact@faros.dev", provider_id="g-ws-deact")
     token = _test_jwt.create_token({"sub": user.id})
 
-    with ws_client.websocket_connect("/ws") as ws:
-        # Authenticate successfully
-        ws.send_json({"token": token})
-        resp = ws.receive_json()
-        assert resp["data"]["status"] == "ok"
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"token": token})
+        response = websocket.receive_json()
+        assert response["data"]["status"] == "ok"
 
-        # Deactivate user mid-session
-        async with get_pool()() as db:
-            result = await db.execute(select(User).where(User.id == user.id))
+        async with Database.get_pool()() as session:
+            result = await session.execute(select(User).where(User.id == user.id))
             db_user = result.scalar_one()
             db_user.is_active = False
-            await db.commit()
+            await session.commit()
 
-        # Next action should fail
-        ws.send_json({"action": "auth.me"})
-        resp = ws.receive_json()
-        assert resp["error"]["code"] == 401
+        websocket.send_json({"action": "auth.me"})
+        response = websocket.receive_json()
+        assert response["error"]["code"] == 401
 
 
 @pytest.mark.asyncio
@@ -163,15 +158,14 @@ async def test_ws_inactive_user(ws_client: TestClient) -> None:  # type: ignore[
     user = await create_test_user(email="ws-inactive@faros.dev", provider_id="g-ws-inact")
     token = _test_jwt.create_token({"sub": user.id})
 
-    # Deactivate after token is created
-    async with get_pool()() as db:
-        result = await db.execute(select(User).where(User.id == user.id))
+    async with Database.get_pool()() as session:
+        result = await session.execute(select(User).where(User.id == user.id))
         db_user = result.scalar_one()
         db_user.is_active = False
-        await db.commit()
+        await session.commit()
 
-    with ws_client.websocket_connect("/ws") as ws:
-        ws.send_json({"action": "auth.me", "token": token})
-        resp = ws.receive_json()
-        assert resp["error"]["code"] == 401
-        assert resp["error"]["detail"] == "Invalid token"
+    with ws_client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"action": "auth.me", "token": token})
+        response = websocket.receive_json()
+        assert response["error"]["code"] == 401
+        assert response["error"]["detail"] == "Invalid token"

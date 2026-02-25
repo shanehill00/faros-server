@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from faros_server.utils.oauth import GoogleOAuthClient
+from faros_server.clients.google_oauth_client import GoogleOAuthClient
+
+_HTTPX_CLIENT = "faros_server.clients.google_oauth_client.httpx.AsyncClient"
 
 
 @pytest.fixture()
@@ -55,13 +57,13 @@ def test_authorization_url(oauth: GoogleOAuthClient) -> None:
 @pytest.mark.asyncio
 async def test_exchange_code_success(oauth: GoogleOAuthClient) -> None:
     """Successful code exchange returns OAuthUserInfo."""
-    mock_token_resp = MagicMock()
-    mock_token_resp.status_code = 200
-    mock_token_resp.json.return_value = {"access_token": "gtoken-123"}
+    mock_token_response = MagicMock()
+    mock_token_response.status_code = 200
+    mock_token_response.json.return_value = {"access_token": "gtoken-123"}
 
-    mock_userinfo_resp = MagicMock()
-    mock_userinfo_resp.status_code = 200
-    mock_userinfo_resp.json.return_value = {
+    mock_userinfo_response = MagicMock()
+    mock_userinfo_response.status_code = 200
+    mock_userinfo_response.json.return_value = {
         "id": "g-user-42",
         "email": "user@gmail.com",
         "name": "Test User",
@@ -69,12 +71,12 @@ async def test_exchange_code_success(oauth: GoogleOAuthClient) -> None:
     }
 
     mock_client = AsyncMock()
-    mock_client.post.return_value = mock_token_resp
-    mock_client.get.return_value = mock_userinfo_resp
+    mock_client.post.return_value = mock_token_response
+    mock_client.get.return_value = mock_userinfo_response
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("faros_server.utils.oauth.httpx.AsyncClient", return_value=mock_client):
+    with patch(_HTTPX_CLIENT, return_value=mock_client):
         info = await oauth.exchange_code(
             code="auth-code",
             redirect_uri="http://localhost/callback",
@@ -90,17 +92,17 @@ async def test_exchange_code_success(oauth: GoogleOAuthClient) -> None:
 @pytest.mark.asyncio
 async def test_exchange_code_token_failure(oauth: GoogleOAuthClient) -> None:
     """Token exchange failure raises ValueError."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 400
-    mock_resp.text = "invalid_grant"
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.text = "invalid_grant"
 
     mock_client = AsyncMock()
-    mock_client.post.return_value = mock_resp
+    mock_client.post.return_value = mock_response
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("faros_server.utils.oauth.httpx.AsyncClient", return_value=mock_client),
+        patch(_HTTPX_CLIENT, return_value=mock_client),
         pytest.raises(ValueError, match="token exchange failed"),
     ):
         await oauth.exchange_code("code", "http://localhost/cb")
@@ -109,17 +111,17 @@ async def test_exchange_code_token_failure(oauth: GoogleOAuthClient) -> None:
 @pytest.mark.asyncio
 async def test_exchange_code_no_access_token(oauth: GoogleOAuthClient) -> None:
     """Missing access_token in response raises ValueError."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {}
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}
 
     mock_client = AsyncMock()
-    mock_client.post.return_value = mock_resp
+    mock_client.post.return_value = mock_response
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("faros_server.utils.oauth.httpx.AsyncClient", return_value=mock_client),
+        patch(_HTTPX_CLIENT, return_value=mock_client),
         pytest.raises(ValueError, match="No access_token"),
     ):
         await oauth.exchange_code("code", "http://localhost/cb")
@@ -128,22 +130,22 @@ async def test_exchange_code_no_access_token(oauth: GoogleOAuthClient) -> None:
 @pytest.mark.asyncio
 async def test_exchange_code_userinfo_failure(oauth: GoogleOAuthClient) -> None:
     """Userinfo request failure raises ValueError."""
-    mock_token_resp = MagicMock()
-    mock_token_resp.status_code = 200
-    mock_token_resp.json.return_value = {"access_token": "tok"}
+    mock_token_response = MagicMock()
+    mock_token_response.status_code = 200
+    mock_token_response.json.return_value = {"access_token": "tok"}
 
-    mock_userinfo_resp = MagicMock()
-    mock_userinfo_resp.status_code = 403
-    mock_userinfo_resp.text = "forbidden"
+    mock_userinfo_response = MagicMock()
+    mock_userinfo_response.status_code = 403
+    mock_userinfo_response.text = "forbidden"
 
     mock_client = AsyncMock()
-    mock_client.post.return_value = mock_token_resp
-    mock_client.get.return_value = mock_userinfo_resp
+    mock_client.post.return_value = mock_token_response
+    mock_client.get.return_value = mock_userinfo_response
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("faros_server.utils.oauth.httpx.AsyncClient", return_value=mock_client),
+        patch(_HTTPX_CLIENT, return_value=mock_client),
         pytest.raises(ValueError, match="userinfo request failed"),
     ):
         await oauth.exchange_code("code", "http://localhost/cb")
@@ -152,22 +154,22 @@ async def test_exchange_code_userinfo_failure(oauth: GoogleOAuthClient) -> None:
 @pytest.mark.asyncio
 async def test_exchange_code_missing_email(oauth: GoogleOAuthClient) -> None:
     """Missing email in userinfo raises ValueError."""
-    mock_token_resp = MagicMock()
-    mock_token_resp.status_code = 200
-    mock_token_resp.json.return_value = {"access_token": "tok"}
+    mock_token_response = MagicMock()
+    mock_token_response.status_code = 200
+    mock_token_response.json.return_value = {"access_token": "tok"}
 
-    mock_userinfo_resp = MagicMock()
-    mock_userinfo_resp.status_code = 200
-    mock_userinfo_resp.json.return_value = {"id": "123"}  # no email
+    mock_userinfo_response = MagicMock()
+    mock_userinfo_response.status_code = 200
+    mock_userinfo_response.json.return_value = {"id": "123"}  # no email
 
     mock_client = AsyncMock()
-    mock_client.post.return_value = mock_token_resp
-    mock_client.get.return_value = mock_userinfo_resp
+    mock_client.post.return_value = mock_token_response
+    mock_client.get.return_value = mock_userinfo_response
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("faros_server.utils.oauth.httpx.AsyncClient", return_value=mock_client),
+        patch(_HTTPX_CLIENT, return_value=mock_client),
         pytest.raises(ValueError, match="did not return id or email"),
     ):
         await oauth.exchange_code("code", "http://localhost/cb")

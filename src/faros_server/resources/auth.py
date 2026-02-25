@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import secrets
 
+from faros_server.clients.google_oauth_client import GoogleOAuthClient
 from faros_server.models.user import User
 from faros_server.services.user_service import UserService
 from faros_server.utils.jwt import JWTManager
-from faros_server.utils.oauth import GoogleOAuthClient
 
 
 class UnsupportedProviderError(Exception):
@@ -38,13 +38,13 @@ class AuthResource:
     def __init__(
         self,
         *,
-        svc: UserService,
-        oauth: GoogleOAuthClient,
-        jwt: JWTManager,
+        user_service: UserService,
+        oauth_client: GoogleOAuthClient,
+        jwt_manager: JWTManager,
     ) -> None:
-        self._svc = svc
-        self._oauth = oauth
-        self._jwt = jwt
+        self._user_service = user_service
+        self._oauth_client = oauth_client
+        self._jwt_manager = jwt_manager
 
     def login_url(self, provider: str) -> str:
         """Build the OAuth authorization URL for the given provider.
@@ -54,11 +54,11 @@ class AuthResource:
             OAuthNotConfiguredError: If OAuth credentials are not set.
         """
         _validate_provider(provider)
-        if not self._oauth.is_configured:
+        if not self._oauth_client.is_configured:
             raise OAuthNotConfiguredError("Google OAuth not configured")
         state = secrets.token_urlsafe(32)
-        return self._oauth.authorization_url(
-            redirect_uri=self._oauth.callback_uri(provider),
+        return self._oauth_client.authorization_url(
+            redirect_uri=self._oauth_client.callback_uri(provider),
             state=state,
         )
 
@@ -71,20 +71,20 @@ class AuthResource:
         """
         _validate_provider(provider)
         try:
-            info = await self._oauth.exchange_code(
-                code=code, redirect_uri=self._oauth.callback_uri(provider),
+            info = await self._oauth_client.exchange_code(
+                code=code, redirect_uri=self._oauth_client.callback_uri(provider),
             )
-        except ValueError as exc:
-            raise AuthError(str(exc)) from exc
-        user = await self._svc.find_or_create_user(info)
+        except ValueError as error:
+            raise AuthError(str(error)) from error
+        user = await self._user_service.find_or_create_user(info)
         if not user.is_active:
             raise AuthError("User account is inactive")
-        token = self._jwt.create_token({"sub": user.id})
+        token = self._jwt_manager.create_token({"sub": user.id})
         return {"access_token": token, "token_type": "bearer"}
 
     async def me(self, user: User) -> dict[str, object]:
         """Return the authenticated user with linked auth methods."""
-        return await self._svc.load_user_response(user)
+        return await self._user_service.load_user_response(user)
 
     def link_url(self, provider: str) -> str:
         """Build the OAuth authorization URL for account linking.
@@ -94,11 +94,11 @@ class AuthResource:
             OAuthNotConfiguredError: If OAuth credentials are not set.
         """
         _validate_provider(provider)
-        if not self._oauth.is_configured:
+        if not self._oauth_client.is_configured:
             raise OAuthNotConfiguredError("Google OAuth not configured")
         state = secrets.token_urlsafe(32)
-        return self._oauth.authorization_url(
-            redirect_uri=self._oauth.link_callback_uri(provider),
+        return self._oauth_client.authorization_url(
+            redirect_uri=self._oauth_client.link_callback_uri(provider),
             state=state,
         )
 
@@ -114,15 +114,15 @@ class AuthResource:
         """
         _validate_provider(provider)
         try:
-            info = await self._oauth.exchange_code(
-                code=code, redirect_uri=self._oauth.link_callback_uri(provider),
+            info = await self._oauth_client.exchange_code(
+                code=code, redirect_uri=self._oauth_client.link_callback_uri(provider),
             )
-        except ValueError as exc:
-            raise AuthError(str(exc)) from exc
+        except ValueError as error:
+            raise AuthError(str(error)) from error
         try:
-            return await self._svc.link_auth_method(user, info)
-        except ValueError as exc:
-            raise DuplicateLinkError(str(exc)) from exc
+            return await self._user_service.link_auth_method(user, info)
+        except ValueError as error:
+            raise DuplicateLinkError(str(error)) from error
 
 
 def _validate_provider(provider: str) -> None:

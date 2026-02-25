@@ -12,6 +12,7 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.exceptions import NotAuthorizedException
 
+from faros_server.clients.google_oauth_client import GoogleOAuthClient
 from faros_server.config import Settings, load_settings
 from faros_server.controllers.auth import AuthController
 from faros_server.controllers.health import HealthController
@@ -21,28 +22,28 @@ from faros_server.models.user import User
 from faros_server.resources.auth import AuthResource
 from faros_server.resources.health import HealthResource
 from faros_server.services.user_service import UserService
-from faros_server.utils.db import close_db, create_tables, init_db
+from faros_server.utils.db import Database
 from faros_server.utils.jwt import JWTManager
-from faros_server.utils.oauth import GoogleOAuthClient
 
 
 def _build(settings: Settings) -> State:
     """Factory/build phase: construct the full object graph once.
 
-    pool → dao → svc ─┐
-                       ├→ AuthResource
-    oauth ─────────────┤
-    jwt ───────────────┘
+    pool → dao → service ─┐
+                           ├→ AuthResource
+    oauth_client ──────────┤
+    jwt_manager ───────────┘
     HealthResource (standalone)
     """
-    pool = init_db(settings.database_url)
-    dao = UserDAO(pool)
-    svc = UserService(dao)
-    jwt = JWTManager(
+    pool = Database.init(settings.database_url)
+    user_dao = UserDAO(pool)
+    user_service = UserService(user_dao)
+    jwt_manager = JWTManager(
         secret_key=settings.secret_key,
+        algorithm=settings.jwt_algorithm,
         expire_minutes=settings.token_expire_minutes,
     )
-    oauth = GoogleOAuthClient(
+    oauth_client = GoogleOAuthClient(
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
         base_url=settings.base_url,
@@ -50,22 +51,26 @@ def _build(settings: Settings) -> State:
         token_url=settings.google_token_url,
         userinfo_url=settings.google_userinfo_url,
     )
-    health = HealthResource()
-    auth = AuthResource(svc=svc, oauth=oauth, jwt=jwt)
+    health_resource = HealthResource()
+    auth_resource = AuthResource(
+        user_service=user_service,
+        oauth_client=oauth_client,
+        jwt_manager=jwt_manager,
+    )
     return State({
-        "dao": dao,
-        "jwt": jwt,
-        "health": health,
-        "auth": auth,
+        "dao": user_dao,
+        "jwt": jwt_manager,
+        "health": health_resource,
+        "auth": auth_resource,
     })
 
 
 @asynccontextmanager
 async def lifespan(app: Litestar) -> AsyncIterator[None]:
     """Create tables on startup, dispose engine on shutdown."""
-    await create_tables()
+    await Database.create_tables()
     yield
-    await close_db()
+    await Database.close()
 
 
 async def provide_current_user(
@@ -78,24 +83,24 @@ async def provide_current_user(
             detail="Missing or invalid Authorization header"
         )
     token = header[len("Bearer "):]
-    jwt: JWTManager = request.app.state.jwt
-    dao: UserDAO = request.app.state.dao
+    jwt_manager: JWTManager = request.app.state.jwt
+    user_dao: UserDAO = request.app.state.dao
     try:
-        return await jwt.resolve_user(token, dao)
-    except ValueError as exc:
-        raise NotAuthorizedException(detail=str(exc)) from exc
+        return await jwt_manager.resolve_user(token, user_dao)
+    except ValueError as error:
+        raise NotAuthorizedException(detail=str(error)) from error
 
 
 def _provide_auth(state: State) -> AuthResource:
     """Provide the pre-built AuthResource from app state."""
-    auth: AuthResource = state.auth
-    return auth
+    auth_resource: AuthResource = state.auth
+    return auth_resource
 
 
 def _provide_health(state: State) -> HealthResource:
     """Provide the pre-built HealthResource from app state."""
-    health: HealthResource = state.health
-    return health
+    health_resource: HealthResource = state.health
+    return health_resource
 
 
 def create_app(settings: Settings | None = None) -> Litestar:
@@ -117,11 +122,11 @@ def create_app(settings: Settings | None = None) -> Litestar:
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(prog="faros-server", description="Faros Server CLI")
-    sub = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command")
 
-    run_p = sub.add_parser("run", help="Start the server")
-    run_p.add_argument("--host", default="0.0.0.0")
-    run_p.add_argument("--port", type=int, default=8000)
+    run_parser = subparsers.add_parser("run", help="Start the server")
+    run_parser.add_argument("--host", default="0.0.0.0")
+    run_parser.add_argument("--port", type=int, default=8000)
 
     return parser
 
@@ -147,8 +152,8 @@ def cli_main(argv: list[str] | None = None) -> None:
             )
     except KeyboardInterrupt:
         pass
-    except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except Exception as error:
+        print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
 

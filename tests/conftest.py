@@ -10,7 +10,7 @@ from litestar.testing import TestClient
 from faros_server.app import create_app
 from faros_server.config import Settings
 from faros_server.models.user import User, UserAuthMethod
-from faros_server.utils.db import get_pool
+from faros_server.utils.db import Database
 from faros_server.utils.jwt import JWTManager
 
 _test_jwt = JWTManager(secret_key="test-secret-key", expire_minutes=30)
@@ -30,8 +30,8 @@ def settings() -> Settings:
 def client(settings: Settings) -> Iterator[TestClient]:  # type: ignore[type-arg]
     """Sync test client wired to the test app."""
     app = create_app(settings)
-    with TestClient(app=app) as tc:
-        yield tc
+    with TestClient(app=app) as test_client:
+        yield test_client
 
 
 async def create_test_user(
@@ -42,24 +42,24 @@ async def create_test_user(
     email: str = "test@faros.dev",
 ) -> User:
     """Create a user with an auth method directly in the database."""
-    pool = get_pool()
-    async with pool() as db:
+    pool = Database.get_pool()
+    async with pool() as session:
         user = User(
             name=name,
             is_superuser=is_superuser,
             is_active=True,
         )
-        db.add(user)
-        await db.flush()
+        session.add(user)
+        await session.flush()
         auth_method = UserAuthMethod(
             user_id=user.id,
             provider=provider,
             provider_id=provider_id,
             email=email,
         )
-        db.add(auth_method)
-        await db.commit()
-        await db.refresh(user)
+        session.add(auth_method)
+        await session.commit()
+        await session.refresh(user)
         return user
 
 

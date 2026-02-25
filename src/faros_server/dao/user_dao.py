@@ -27,12 +27,12 @@ class UserDAO:
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[None]:
         """Open a unit of work. All DAO calls inside share one connection."""
-        async with self._pool() as conn:
-            token = _active_conn.set(conn)
+        async with self._pool() as connection:
+            context_token = _active_conn.set(connection)
             try:
                 yield
             finally:
-                _active_conn.reset(token)
+                _active_conn.reset(context_token)
 
     def _conn(self) -> AsyncSession:
         """Return the current unit-of-work connection."""

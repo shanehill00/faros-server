@@ -18,8 +18,8 @@ def _load_yaml(env: str) -> dict[str, Any]:
     path = _CONFIG_ROOT / env / "settings.yaml"
     if not path.exists():
         return {}
-    with path.open() as f:
-        data = yaml.safe_load(f)
+    with path.open() as config_file:
+        data = yaml.safe_load(config_file)
     return data if isinstance(data, dict) else {}
 
 
@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     secret_key: str = "change-me-in-production"
     database_url: str = "sqlite+aiosqlite:///faros.db"
+    jwt_algorithm: str = "HS256"
     token_expire_minutes: int = 60
     base_url: str = "http://localhost:8000"
     google_client_id: str = ""

@@ -11,11 +11,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from faros_server.utils.db import Base
 
 
-def _utcnow() -> datetime:
-    """Return timezone-aware UTC now."""
-    return datetime.now(timezone.utc)
-
-
 class User(Base):
     """Operator account. Identity is decoupled from auth providers."""
 
@@ -28,7 +23,9 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class UserAuthMethod(Base):
@@ -43,4 +40,6 @@ class UserAuthMethod(Base):
     provider: Mapped[str] = mapped_column(String(32))  # "google", "github", etc.
     provider_id: Mapped[str] = mapped_column(String(255), index=True)
     email: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from faros_server.clients.google_oauth_client import OAuthUserInfo
 from faros_server.dao.user_dao import UserDAO
 from faros_server.models.user import User
-from faros_server.utils.oauth import OAuthUserInfo
 
 
 class UserService:
@@ -14,8 +14,8 @@ class UserService:
     per service call. No database concepts in the public API.
     """
 
-    def __init__(self, dao: UserDAO) -> None:
-        self._dao = dao
+    def __init__(self, user_dao: UserDAO) -> None:
+        self._dao = user_dao
 
     async def find_or_create_user(self, info: OAuthUserInfo) -> User:
         """Find user by provider+provider_id, or create a new one.
@@ -31,8 +31,8 @@ class UserService:
             if auth_method is not None:
                 user = await self._dao.find_by_id(auth_method.user_id)
                 if user is None:  # pragma: no cover — defensive
-                    msg = f"User {auth_method.user_id} not found for auth method"
-                    raise ValueError(msg)
+                    message = f"User {auth_method.user_id} not found for auth method"
+                    raise ValueError(message)
                 user.name = info.name
                 user.avatar_url = info.avatar_url
                 auth_method.email = info.email
@@ -68,8 +68,8 @@ class UserService:
                 "is_superuser": user.is_superuser,
                 "is_active": user.is_active,
                 "auth_methods": [
-                    {"provider": m.provider, "email": m.email}
-                    for m in methods
+                    {"provider": method.provider, "email": method.email}
+                    for method in methods
                 ],
             }
 
@@ -86,8 +86,8 @@ class UserService:
                 info.provider, info.provider_id
             )
             if existing is not None:
-                msg = "This provider account is already linked to a user"
-                raise ValueError(msg)
+                message = "This provider account is already linked to a user"
+                raise ValueError(message)
 
             await self._dao.create_auth_method(
                 user_id=user.id,
@@ -104,7 +104,7 @@ class UserService:
                 "is_superuser": user.is_superuser,
                 "is_active": user.is_active,
                 "auth_methods": [
-                    {"provider": m.provider, "email": m.email}
-                    for m in methods
+                    {"provider": method.provider, "email": method.email}
+                    for method in methods
                 ],
             }

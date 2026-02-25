@@ -26,11 +26,11 @@ class AuthController(Controller):
         """Redirect the user to the OAuth provider's consent screen."""
         try:
             url = auth.login_url(provider)
-        except UnsupportedProviderError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except OAuthNotConfiguredError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return Redirect(path=url, status_code=302)
+            return Redirect(path=url, status_code=302)
+        except UnsupportedProviderError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except OAuthNotConfiguredError as error:
+            raise HTTPException(status_code=500, detail=str(error)) from error
 
     @get("/callback/{provider:str}")
     async def callback(
@@ -39,10 +39,10 @@ class AuthController(Controller):
         """Handle OAuth callback: exchange code, find/create user, issue JWT."""
         try:
             return await auth.callback(provider, code)
-        except UnsupportedProviderError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except AuthError as exc:
-            raise NotAuthorizedException(detail=str(exc)) from exc
+        except UnsupportedProviderError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except AuthError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
 
     @get("/link/{provider:str}")
     async def link_provider(
@@ -51,11 +51,11 @@ class AuthController(Controller):
         """Redirect logged-in user to OAuth provider to link a new auth method."""
         try:
             url = auth.link_url(provider)
-        except UnsupportedProviderError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except OAuthNotConfiguredError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return Redirect(path=url, status_code=302)
+            return Redirect(path=url, status_code=302)
+        except UnsupportedProviderError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except OAuthNotConfiguredError as error:
+            raise HTTPException(status_code=500, detail=str(error)) from error
 
     @get("/link/callback/{provider:str}")
     async def link_callback(
@@ -64,12 +64,12 @@ class AuthController(Controller):
         """Handle OAuth link callback: add auth method to existing user."""
         try:
             return await auth.link_callback(provider, code, user)
-        except UnsupportedProviderError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except AuthError as exc:
-            raise NotAuthorizedException(detail=str(exc)) from exc
-        except DuplicateLinkError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except UnsupportedProviderError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except AuthError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
+        except DuplicateLinkError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @get("/me")
     async def me(self, user: User, auth: AuthResource) -> dict[str, object]:

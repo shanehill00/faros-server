@@ -71,8 +71,8 @@ class GoogleOAuthClient:
         Raises:
             ValueError: If the token exchange or userinfo request fails.
         """
-        async with httpx.AsyncClient() as client:
-            token_resp = await client.post(
+        async with httpx.AsyncClient() as http_client:
+            token_response = await http_client.post(
                 self._token_url,
                 data={
                     "code": code,
@@ -82,27 +82,27 @@ class GoogleOAuthClient:
                     "grant_type": "authorization_code",
                 },
             )
-            if token_resp.status_code != 200:
+            if token_response.status_code != 200:
                 raise ValueError(
-                    f"Google token exchange failed: {token_resp.text}"
+                    f"Google token exchange failed: {token_response.text}"
                 )
-            tokens = token_resp.json()
+            tokens = token_response.json()
             access_token = tokens.get("access_token")
             if not access_token:
                 raise ValueError("No access_token in Google response")
 
-            userinfo_resp = await client.get(
+            userinfo_response = await http_client.get(
                 self._userinfo_url,
                 headers={"Authorization": f"Bearer {access_token}"},
             )
-            if userinfo_resp.status_code != 200:
+            if userinfo_response.status_code != 200:
                 raise ValueError(
-                    f"Google userinfo request failed: {userinfo_resp.text}"
+                    f"Google userinfo request failed: {userinfo_response.text}"
                 )
-            info = userinfo_resp.json()
+            userinfo = userinfo_response.json()
 
-        provider_id = info.get("id", "")
-        email = info.get("email", "")
+        provider_id = userinfo.get("id", "")
+        email = userinfo.get("email", "")
         if not provider_id or not email:
             raise ValueError("Google did not return id or email")
 
@@ -110,6 +110,6 @@ class GoogleOAuthClient:
             provider="google",
             provider_id=str(provider_id),
             email=email,
-            name=info.get("name"),
-            avatar_url=info.get("picture"),
+            name=userinfo.get("name"),
+            avatar_url=userinfo.get("picture"),
         )
