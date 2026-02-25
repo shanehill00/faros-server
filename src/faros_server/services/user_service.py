@@ -5,7 +5,6 @@ from __future__ import annotations
 from faros_server.auth.oauth import OAuthUserInfo
 from faros_server.dao.user_dao import UserDAO
 from faros_server.models.user import User
-from faros_server.schemas.user import AuthMethodRead
 
 
 class UserService:
@@ -63,7 +62,7 @@ class UserService:
             "is_superuser": user.is_superuser,
             "is_active": user.is_active,
             "auth_methods": [
-                AuthMethodRead(provider=m.provider, email=m.email)
+                {"provider": m.provider, "email": m.email}
                 for m in methods
             ],
         }
