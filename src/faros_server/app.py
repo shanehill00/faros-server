@@ -17,11 +17,11 @@ from faros_server.controllers.auth import AuthController
 from faros_server.controllers.health import HealthController
 from faros_server.controllers.ws import websocket_endpoint
 from faros_server.dao.user_dao import UserDAO
-from faros_server.db import close_db, create_tables, init_db
 from faros_server.models.user import User
 from faros_server.resources.auth import AuthResource
 from faros_server.resources.health import HealthResource
 from faros_server.services.user_service import UserService
+from faros_server.utils.db import close_db, create_tables, init_db
 from faros_server.utils.jwt import JWTManager
 from faros_server.utils.oauth import GoogleOAuthClient
 

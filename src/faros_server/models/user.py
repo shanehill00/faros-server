@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from faros_server.db import Base
+from faros_server.utils.db import Base
 
 
 def _utcnow() -> datetime:

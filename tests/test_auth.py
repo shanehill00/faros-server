@@ -162,8 +162,8 @@ async def test_callback_inactive_user(client: TestClient) -> None:  # type: igno
     """OAuth callback returns 401 for inactive user."""
     from sqlalchemy import select
 
-    from faros_server.db import get_pool
     from faros_server.models.user import User
+    from faros_server.utils.db import get_pool
 
     await create_test_user(
         provider="google",
@@ -372,8 +372,8 @@ async def test_me_inactive_user(client: TestClient) -> None:  # type: ignore[typ
     """Token for inactive user returns 401."""
     from sqlalchemy import select
 
-    from faros_server.db import get_pool
     from faros_server.models.user import User
+    from faros_server.utils.db import get_pool
 
     user = await create_test_user(email="inactive-me@faros.dev", provider_id="g-inact-me")
     async with get_pool()() as db:

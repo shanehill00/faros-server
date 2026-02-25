@@ -7,7 +7,7 @@ from litestar.testing import TestClient
 
 from faros_server.app import create_app
 from faros_server.config import Settings
-from faros_server.db import get_pool
+from faros_server.utils.db import get_pool
 from faros_server.utils.jwt import JWTManager
 from tests.conftest import create_test_user
 

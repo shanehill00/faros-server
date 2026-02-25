@@ -9,8 +9,8 @@ from litestar.testing import TestClient
 
 from faros_server.app import create_app
 from faros_server.config import Settings
-from faros_server.db import get_pool
 from faros_server.models.user import User, UserAuthMethod
+from faros_server.utils.db import get_pool
 from faros_server.utils.jwt import JWTManager
 
 _test_jwt = JWTManager(secret_key="test-secret-key", expire_minutes=30)

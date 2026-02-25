@@ -4,9 +4,9 @@ import os
 
 import pytest
 
-from faros_server.db import close_db, create_tables, get_pool, init_db
 from faros_server.models.agent import Agent
 from faros_server.models.user import User
+from faros_server.utils.db import close_db, create_tables, get_pool, init_db
 
 
 @pytest.mark.asyncio
