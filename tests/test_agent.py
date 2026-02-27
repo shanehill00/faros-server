@@ -339,6 +339,31 @@ async def test_device_page_already_approved(client: TestClient) -> None:  # type
     assert "Already Registered" in response.text
 
 
+def test_device_page_token_no_sub_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page with token missing 'sub' claim redirects to SSO."""
+    _oauth_client(client)._client_id = "test-client-id"
+    token = JWTManager.create_token({"foo": "bar"})
+    response = client.get(
+        f"/api/agents/device/ABCD-1234?token={token}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "accounts.google.com" in response.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_device_page_token_deleted_user_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page with token for nonexistent user redirects to SSO."""
+    _oauth_client(client)._client_id = "test-client-id"
+    token = JWTManager.create_token({"sub": "nonexistent-id-000"})
+    response = client.get(
+        f"/api/agents/device/ABCD-1234?token={token}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "accounts.google.com" in response.headers["location"]
+
+
 def test_device_page_bad_token_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
     """Device page with invalid token redirects to SSO (treats as unauthenticated)."""
     _oauth_client(client)._client_id = "test-client-id"

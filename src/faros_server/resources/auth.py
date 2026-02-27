@@ -105,6 +105,21 @@ class AuthResource:
         token = JWTManager.create_token({"sub": user.id})
         return {"access_token": token, "token_type": "bearer"}
 
+    async def resolve_token(self, token: str) -> User:
+        """Decode a JWT and return the corresponding active user.
+
+        Raises:
+            ValueError: If the token is invalid or the user is not found/inactive.
+        """
+        payload = JWTManager.decode_token(token)
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise ValueError("Invalid token payload: missing sub claim")
+        user = await self._user_service.find_by_id(str(user_id))
+        if user is None or not user.is_active:
+            raise ValueError("User not found or inactive")
+        return user
+
     async def me(self, user: User) -> dict[str, object]:
         """Return the authenticated user with linked auth methods."""
         return await self._user_service.load_user_response(user)
