@@ -31,7 +31,7 @@ dev = [
 ]
 
 [project.scripts]
-faros-server = "faros_server.app:cli_main"
+faros-server = "faros_server.app:CLI.main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

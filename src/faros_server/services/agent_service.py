@@ -29,6 +29,10 @@ class AgentService:
     ) -> dict[str, str | int]:
         """Initiate device-flow registration.
 
+        If the agent already exists (returning agent after logout), auto-approve
+        with a fresh API key so the first poll returns ``complete`` without
+        requiring browser interaction.
+
         Returns:
             Dict with device_code, user_code, expires_in, and interval.
         """
@@ -39,13 +43,26 @@ class AgentService:
         )
 
         async with self._dao.transaction():
-            await self._dao.create_device_registration(
+            reg = await self._dao.create_device_registration(
                 device_code=device_code,
                 user_code=user_code,
                 agent_name=agent_name,
                 robot_type=robot_type,
                 expires_at=expires_at,
             )
+
+            # Auto-approve returning agents that already have an owner.
+            existing = await self._dao.find_agent_by_name(agent_name)
+            if existing is not None and existing.owner_id:
+                plaintext = Crypto.generate_api_key()
+                await self._dao.create_api_key(
+                    key_hash=Crypto.hash_key(plaintext),
+                    agent_id=existing.id,
+                )
+                reg.status = "approved"
+                reg.api_key_plaintext = plaintext
+                reg.agent_id = existing.id
+
             await self._dao.commit()
 
         return {
