@@ -20,25 +20,25 @@ from faros_server.resources.auth import (
 )
 
 
-def _extract_next_path(state: str) -> str | None:
-    """Decode next_path from OAuth state. Returns None if absent or invalid."""
-    if not state:
-        return None
-    try:
-        data = json.loads(base64.urlsafe_b64decode(state).decode())
-        path = str(data.get("next", ""))
-    except (json.JSONDecodeError, ValueError, KeyError):
-        return None
-    # Prevent open redirect — only allow device approval paths
-    if path.startswith("/api/agents/device/"):
-        return path
-    return None
-
-
 class AuthController(Controller):
     """HTTP adapter for authentication and user account operations."""
 
     path = "/api/auth"
+
+    @staticmethod
+    def _extract_next_path(oauth_state: str) -> str | None:
+        """Decode next_path from OAuth state. Returns None if absent or invalid."""
+        if not oauth_state:
+            return None
+        try:
+            data = json.loads(base64.urlsafe_b64decode(oauth_state).decode())
+            path = str(data.get("next", ""))
+        except (json.JSONDecodeError, ValueError, KeyError):
+            return None
+        # Prevent open redirect — only allow device approval paths
+        if path.startswith("/api/agents/device/"):
+            return path
+        return None
 
     @get("/login/{provider:str}")
     async def login(self, provider: str, auth: AuthResource) -> Redirect:
@@ -67,7 +67,7 @@ class AuthController(Controller):
         except AuthError as error:
             raise NotAuthorizedException(detail=str(error)) from error
         oauth_state = request.query_params.get("state", "")
-        next_path = _extract_next_path(oauth_state)
+        next_path = self._extract_next_path(oauth_state)
         if next_path is not None:
             token = result["access_token"]
             return Redirect(path=f"{next_path}?token={token}", status_code=302)

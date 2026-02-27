@@ -16,6 +16,7 @@ from faros_server.clients.google_oauth_client import GoogleOAuthClient
 from faros_server.config import ConfigLoader, Settings
 from faros_server.controllers.agent import AgentController
 from faros_server.controllers.auth import AuthController
+from faros_server.controllers.device_page import DevicePageController
 from faros_server.controllers.health import HealthController
 from faros_server.dao.agent_dao import AgentDAO
 from faros_server.dao.user_dao import UserDAO
@@ -124,7 +125,7 @@ def create_app(settings: Settings | None = None) -> Litestar:
     if settings is None:
         settings = ConfigLoader.load_settings()
     return Litestar(
-        route_handlers=[HealthController, AuthController, AgentController],
+        route_handlers=[HealthController, AuthController, AgentController, DevicePageController],
         state=_build(settings),
         lifespan=[lifespan],
         dependencies={

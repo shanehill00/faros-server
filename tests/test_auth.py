@@ -10,7 +10,7 @@ import pytest
 from litestar.testing import TestClient
 
 from faros_server.clients.google_oauth_client import OAuthUserInfo
-from faros_server.controllers.auth import _extract_next_path
+from faros_server.controllers.auth import AuthController
 from faros_server.utils.jwt import JWTManager
 from tests.conftest import auth_headers, create_test_user
 
@@ -490,27 +490,27 @@ def test_callback_state_open_redirect_blocked(client: TestClient) -> None:  # ty
 def test_extract_next_path_valid() -> None:
     """Valid state with /api/agents/device/ path is accepted."""
     state = _build_state("/api/agents/device/XXXX-1234")
-    assert _extract_next_path(state) == "/api/agents/device/XXXX-1234"
+    assert AuthController._extract_next_path(state) == "/api/agents/device/XXXX-1234"
 
 
 def test_extract_next_path_empty() -> None:
     """Empty state returns None."""
-    assert _extract_next_path("") is None
+    assert AuthController._extract_next_path("") is None
 
 
 def test_extract_next_path_bad_json() -> None:
     """Non-JSON state returns None."""
     state = base64.urlsafe_b64encode(b"not json").decode()
-    assert _extract_next_path(state) is None
+    assert AuthController._extract_next_path(state) is None
 
 
 def test_extract_next_path_no_next_key() -> None:
     """State without 'next' key returns None."""
     state = base64.urlsafe_b64encode(json.dumps({"csrf": "x"}).encode()).decode()
-    assert _extract_next_path(state) is None
+    assert AuthController._extract_next_path(state) is None
 
 
 def test_extract_next_path_blocked_path() -> None:
     """State with non-device path is blocked."""
     state = _build_state("/api/auth/me")
-    assert _extract_next_path(state) is None
+    assert AuthController._extract_next_path(state) is None
