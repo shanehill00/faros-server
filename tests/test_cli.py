@@ -7,12 +7,12 @@ import sys
 
 import pytest
 
-from faros_server.app import _build_parser
+from faros_server.app import CLI
 
 
 def test_parser_run_defaults() -> None:
     """Parser parses 'run' with defaults."""
-    parser = _build_parser()
+    parser = CLI._build_parser()
     args = parser.parse_args(["run"])
     assert args.command == "run"
     assert args.host == "0.0.0.0"
@@ -21,10 +21,8 @@ def test_parser_run_defaults() -> None:
 
 def test_cli_no_command_exits(capsys: pytest.CaptureFixture[str]) -> None:
     """CLI with no command prints help and exits 1."""
-    from faros_server.app import cli_main
-
     with pytest.raises(SystemExit) as exc_info:
-        cli_main([])
+        CLI.main([])
     assert exc_info.value.code == 1
 
 
