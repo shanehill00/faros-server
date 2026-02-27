@@ -17,6 +17,11 @@ class UserService:
     def __init__(self, user_dao: UserDAO) -> None:
         self._dao = user_dao
 
+    async def find_by_id(self, user_id: str) -> User | None:
+        """Find a user by primary key."""
+        async with self._dao.transaction():
+            return await self._dao.find_by_id(user_id)
+
     async def find_or_create_user(self, info: OAuthUserInfo) -> User:
         """Find user by provider+provider_id, or create a new one.
 

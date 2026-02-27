@@ -93,25 +93,6 @@ class AgentController(Controller):
                 status_code=409, detail=str(error),
             ) from error
 
-    @get("/device/{user_code:str}")
-    async def device_page(
-        self,
-        user_code: str,
-        user: User,
-        agent_resource: AgentResource,
-    ) -> dict[str, str]:
-        """HTML approval page info for a pending device registration."""
-        try:
-            return await agent_resource.device_page(user_code)
-        except DeviceFlowNotFoundError as error:
-            raise HTTPException(
-                status_code=404, detail=str(error),
-            ) from error
-        except DeviceFlowExpiredError as error:
-            raise HTTPException(
-                status_code=410, detail=str(error),
-            ) from error
-
     @get("/")
     async def list_agents(
         self,

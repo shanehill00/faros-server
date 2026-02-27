@@ -16,6 +16,7 @@ from faros_server.clients.google_oauth_client import GoogleOAuthClient
 from faros_server.config import ConfigLoader, Settings
 from faros_server.controllers.agent import AgentController
 from faros_server.controllers.auth import AuthController
+from faros_server.controllers.device_page import DevicePageController
 from faros_server.controllers.health import HealthController
 from faros_server.dao.agent_dao import AgentDAO
 from faros_server.dao.user_dao import UserDAO
@@ -29,150 +30,166 @@ from faros_server.utils.db import Database
 from faros_server.utils.jwt import JWTManager
 
 
-def _build(settings: Settings) -> State:
-    """Factory/build phase: construct the full object graph once.
+class AppFactory:
+    """Builds and configures the Litestar application. All methods are static."""
 
-    pool → user_dao → user_service ─┐
-                                     ├→ AuthResource
-    oauth_client ────────────────────┘
-    pool → agent_dao → agent_service → AgentResource
-    JWTManager.configure() (class-level)
-    HealthResource (standalone)
-    """
-    pool = Database.init(settings.database_url)
-    user_dao = UserDAO(pool)
-    user_service = UserService(user_dao)
-    agent_dao = AgentDAO(pool)
-    agent_service = AgentService(
-        agent_dao, expire_minutes=settings.device_code_expire_minutes,
-    )
-    JWTManager.configure(
-        secret_key=settings.secret_key,
-        algorithm=settings.jwt_algorithm,
-        expire_minutes=settings.token_expire_minutes,
-    )
-    oauth_client = GoogleOAuthClient(
-        client_id=settings.google_client_id,
-        client_secret=settings.google_client_secret,
-        base_url=settings.base_url,
-        auth_url=settings.google_auth_url,
-        token_url=settings.google_token_url,
-        userinfo_url=settings.google_userinfo_url,
-    )
-    health_resource = HealthResource()
-    auth_resource = AuthResource(
-        user_service=user_service,
-        oauth_client=oauth_client,
-    )
-    agent_resource = AgentResource(
-        agent_service=agent_service,
-        base_url=settings.base_url,
-    )
-    return State({
-        "dao": user_dao,
-        "health": health_resource,
-        "auth": auth_resource,
-        "agent": agent_resource,
-    })
+    @staticmethod
+    def _build(settings: Settings) -> State:
+        """Construct the full object graph once.
 
-
-@asynccontextmanager
-async def lifespan(app: Litestar) -> AsyncIterator[None]:
-    """Create tables on startup, dispose engine on shutdown."""
-    await Database.create_tables()
-    yield
-    await Database.close()
-
-
-async def provide_current_user(
-    request: Request[object, object, State],
-) -> User:
-    """Litestar dependency — extract authenticated user from Authorization header."""
-    header = request.headers.get("Authorization", "")
-    if not header.startswith("Bearer "):
-        raise NotAuthorizedException(
-            detail="Missing or invalid Authorization header"
+        pool → user_dao → user_service ─┐
+                                         ├→ AuthResource
+        oauth_client ────────────────────┘
+        pool → agent_dao → agent_service → AgentResource
+        JWTManager.configure() (class-level)
+        HealthResource (standalone)
+        """
+        pool = Database.init(settings.database_url)
+        user_dao = UserDAO(pool)
+        user_service = UserService(user_dao)
+        agent_dao = AgentDAO(pool)
+        agent_service = AgentService(
+            agent_dao, expire_minutes=settings.device_code_expire_minutes,
         )
-    token = header[len("Bearer "):]
-    user_dao: UserDAO = request.app.state.dao
-    try:
-        return await JWTManager.resolve_user(token, user_dao)
-    except ValueError as error:
-        raise NotAuthorizedException(detail=str(error)) from error
+        JWTManager.configure(
+            secret_key=settings.secret_key,
+            algorithm=settings.jwt_algorithm,
+            expire_minutes=settings.token_expire_minutes,
+        )
+        oauth_client = GoogleOAuthClient(
+            client_id=settings.google_client_id,
+            client_secret=settings.google_client_secret,
+            base_url=settings.base_url,
+            auth_url=settings.google_auth_url,
+            token_url=settings.google_token_url,
+            userinfo_url=settings.google_userinfo_url,
+        )
+        health_resource = HealthResource()
+        auth_resource = AuthResource(
+            user_service=user_service,
+            oauth_client=oauth_client,
+        )
+        agent_resource = AgentResource(
+            agent_service=agent_service,
+            base_url=settings.base_url,
+        )
+        return State({
+            "health": health_resource,
+            "auth": auth_resource,
+            "agent": agent_resource,
+        })
 
+    @staticmethod
+    @asynccontextmanager
+    async def _lifespan(app: Litestar) -> AsyncIterator[None]:
+        """Create tables on startup, dispose engine on shutdown."""
+        await Database.create_tables()
+        yield
+        await Database.close()
 
-def _provide_auth(state: State) -> AuthResource:
-    """Provide the pre-built AuthResource from app state."""
-    auth_resource: AuthResource = state.auth
-    return auth_resource
-
-
-def _provide_health(state: State) -> HealthResource:
-    """Provide the pre-built HealthResource from app state."""
-    health_resource: HealthResource = state.health
-    return health_resource
-
-
-def _provide_agent(state: State) -> AgentResource:
-    """Provide the pre-built AgentResource from app state."""
-    agent_resource: AgentResource = state.agent
-    return agent_resource
-
-
-def create_app(settings: Settings | None = None) -> Litestar:
-    """Create and configure the Litestar application."""
-    if settings is None:
-        settings = ConfigLoader.load_settings()
-    return Litestar(
-        route_handlers=[HealthController, AuthController, AgentController],
-        state=_build(settings),
-        lifespan=[lifespan],
-        dependencies={
-            "user": Provide(provide_current_user),
-            "auth": Provide(_provide_auth, sync_to_thread=False),
-            "health_resource": Provide(_provide_health, sync_to_thread=False),
-            "agent_resource": Provide(_provide_agent, sync_to_thread=False),
-        },
-    )
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser."""
-    parser = argparse.ArgumentParser(prog="faros-server", description="Faros Server CLI")
-    subparsers = parser.add_subparsers(dest="command")
-
-    run_parser = subparsers.add_parser("run", help="Start the server")
-    run_parser.add_argument("--host", default="0.0.0.0")
-    run_parser.add_argument("--port", type=int, default=8000)
-
-    return parser
-
-
-def cli_main(argv: list[str] | None = None) -> None:
-    """CLI entry point. Catches all exceptions and exits cleanly."""
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-
-    if args.command is None:
-        parser.print_help()
-        sys.exit(1)
-
-    try:
-        if args.command == "run":
-            import uvicorn
-
-            uvicorn.run(
-                "faros_server.app:create_app",
-                factory=True,
-                host=args.host,
-                port=args.port,
+    @staticmethod
+    async def provide_user(
+        request: Request[object, object, State],
+    ) -> User:
+        """Litestar dependency — extract authenticated user from Authorization header."""
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            raise NotAuthorizedException(
+                detail="Missing or invalid Authorization header",
             )
-    except KeyboardInterrupt:
-        pass
-    except Exception as error:
-        print(f"Error: {error}", file=sys.stderr)
-        sys.exit(1)
+        token = header[len("Bearer "):]
+        auth_resource: AuthResource = request.app.state.auth
+        try:
+            return await auth_resource.resolve_token(token)
+        except ValueError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
+
+    @staticmethod
+    def provide_auth(state: State) -> AuthResource:
+        """Provide the pre-built AuthResource from app state."""
+        auth_resource: AuthResource = state.auth
+        return auth_resource
+
+    @staticmethod
+    def provide_health(state: State) -> HealthResource:
+        """Provide the pre-built HealthResource from app state."""
+        health_resource: HealthResource = state.health
+        return health_resource
+
+    @staticmethod
+    def provide_agent(state: State) -> AgentResource:
+        """Provide the pre-built AgentResource from app state."""
+        agent_resource: AgentResource = state.agent
+        return agent_resource
+
+    @staticmethod
+    def create_app(settings: Settings | None = None) -> Litestar:
+        """Create and configure the Litestar application."""
+        if settings is None:
+            settings = ConfigLoader.load_settings()
+        return Litestar(
+            route_handlers=[
+                HealthController, AuthController,
+                AgentController, DevicePageController,
+            ],
+            state=AppFactory._build(settings),
+            lifespan=[AppFactory._lifespan],
+            dependencies={
+                "user": Provide(AppFactory.provide_user),
+                "auth": Provide(AppFactory.provide_auth, sync_to_thread=False),
+                "health_resource": Provide(AppFactory.provide_health, sync_to_thread=False),
+                "agent_resource": Provide(AppFactory.provide_agent, sync_to_thread=False),
+            },
+        )
+
+
+# Public alias so conftest / uvicorn can call create_app() without knowing AppFactory.
+create_app = AppFactory.create_app
+
+
+class CLI:
+    """Command-line interface for faros-server."""
+
+    @staticmethod
+    def _build_parser() -> argparse.ArgumentParser:
+        """Build the CLI argument parser."""
+        parser = argparse.ArgumentParser(
+            prog="faros-server", description="Faros Server CLI",
+        )
+        subparsers = parser.add_subparsers(dest="command")
+
+        run_parser = subparsers.add_parser("run", help="Start the server")
+        run_parser.add_argument("--host", default="0.0.0.0")
+        run_parser.add_argument("--port", type=int, default=8000)
+
+        return parser
+
+    @staticmethod
+    def main(argv: list[str] | None = None) -> None:
+        """CLI entry point. Catches all exceptions and exits cleanly."""
+        parser = CLI._build_parser()
+        args = parser.parse_args(argv)
+
+        if args.command is None:
+            parser.print_help()
+            sys.exit(1)
+
+        try:
+            if args.command == "run":
+                import uvicorn
+
+                uvicorn.run(
+                    "faros_server.app:create_app",
+                    factory=True,
+                    host=args.host,
+                    port=args.port,
+                )
+        except KeyboardInterrupt:
+            pass
+        except Exception as error:
+            print(f"Error: {error}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
-    cli_main()
+    CLI.main()
