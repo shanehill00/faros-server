@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from litestar.testing import TestClient
 
-from faros_server.services.agent_service import _ensure_utc
 from faros_server.utils.db import Database
+from faros_server.utils.time import Time
 from tests.conftest import auth_headers, create_test_user
 
 # --- Device flow: start ---
@@ -561,20 +561,20 @@ async def test_resolve_api_key_revoked(client: TestClient) -> None:  # type: ign
         await agent_service.resolve_api_key(api_key)
 
 
-# --- _ensure_utc unit tests ---
+# --- Time.ensure_utc unit tests ---
 
 
 def test_ensure_utc_naive() -> None:
-    """_ensure_utc adds UTC to naive datetimes."""
+    """Time.ensure_utc adds UTC to naive datetimes."""
     naive = datetime(2026, 1, 1, 12, 0, 0)
-    result = _ensure_utc(naive)
+    result = Time.ensure_utc(naive)
     assert result.tzinfo is timezone.utc
 
 
 def test_ensure_utc_aware() -> None:
-    """_ensure_utc passes through tz-aware datetimes unchanged."""
+    """Time.ensure_utc passes through tz-aware datetimes unchanged."""
     aware = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    result = _ensure_utc(aware)
+    result = Time.ensure_utc(aware)
     assert result is aware
 
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from faros_server.models.user import User
-from faros_server.services.agent_service import AgentService, _ensure_utc
+from faros_server.services.agent_service import AgentService
+from faros_server.utils.time import Time
 
 
 class DeviceFlowExpiredError(Exception):
@@ -100,7 +101,7 @@ class AgentResource:
         if reg is None:
             raise DeviceFlowNotFoundError("Unknown user code")
         now = datetime.now(timezone.utc)
-        if now > _ensure_utc(reg.expires_at):
+        if now > Time.ensure_utc(reg.expires_at):
             raise DeviceFlowExpiredError("Device code has expired")
         return {
             "user_code": reg.user_code,

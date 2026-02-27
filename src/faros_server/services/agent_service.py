@@ -2,36 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import secrets
-import string
 from datetime import datetime, timedelta, timezone
 
 from faros_server.dao.agent_dao import AgentDAO
 from faros_server.models.agent import Agent, DeviceRegistration
-
-_USER_CODE_ALPHABET = string.ascii_uppercase + string.digits
-_USER_CODE_LENGTH = 8
-_API_KEY_PREFIX = "fk_"
-
-
-def _generate_user_code() -> str:
-    """Generate XXXX-XXXX user code (uppercase alphanumeric)."""
-    left = "".join(secrets.choice(_USER_CODE_ALPHABET) for _ in range(4))
-    right = "".join(secrets.choice(_USER_CODE_ALPHABET) for _ in range(4))
-    return f"{left}-{right}"
-
-
-def _hash_key(plaintext: str) -> str:
-    """SHA-256 hash of a plaintext API key."""
-    return hashlib.sha256(plaintext.encode()).hexdigest()
-
-
-def _ensure_utc(dt: datetime) -> datetime:
-    """Ensure a datetime is UTC-aware. SQLite may strip timezone info."""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+from faros_server.utils.crypto import Crypto
+from faros_server.utils.time import Time
 
 
 class AgentService:
@@ -56,7 +33,7 @@ class AgentService:
             Dict with device_code, user_code, expires_in, and interval.
         """
         device_code = secrets.token_urlsafe(32)
-        user_code = _generate_user_code()
+        user_code = Crypto.generate_user_code()
         expires_at = datetime.now(timezone.utc) + timedelta(
             minutes=self._expire_minutes,
         )
@@ -96,7 +73,7 @@ class AgentService:
             raise ValueError("Unknown device code")
 
         now = datetime.now(timezone.utc)
-        if now > _ensure_utc(reg.expires_at):
+        if now > Time.ensure_utc(reg.expires_at):
             return {"status": "expired"}
 
         if reg.status == "pending":
@@ -131,7 +108,7 @@ class AgentService:
                 raise ValueError("Unknown user code")
 
             now = datetime.now(timezone.utc)
-            if now > _ensure_utc(reg.expires_at):
+            if now > Time.ensure_utc(reg.expires_at):
                 raise ValueError("Device code has expired")
 
             if reg.status != "pending":
@@ -149,9 +126,9 @@ class AgentService:
                 )
 
             # Generate API key
-            plaintext = _API_KEY_PREFIX + secrets.token_urlsafe(32)
+            plaintext = Crypto.generate_api_key()
             await self._dao.create_api_key(
-                key_hash=_hash_key(plaintext),
+                key_hash=Crypto.hash_key(plaintext),
                 agent_id=agent.id,
             )
 
@@ -169,7 +146,7 @@ class AgentService:
         Raises:
             ValueError: If the key is invalid, revoked, or agent not found.
         """
-        key_hash = _hash_key(api_key)
+        key_hash = Crypto.hash_key(api_key)
         async with self._dao.transaction():
             row = await self._dao.find_api_key_by_hash(key_hash)
             if row is None:
@@ -185,7 +162,7 @@ class AgentService:
         """Return all agents owned by a user."""
         async with self._dao.transaction():
             agents = await self._dao.list_agents_by_owner(owner_id)
-        return [_agent_to_dict(a) for a in agents]
+        return [self._agent_to_dict(a) for a in agents]
 
     async def revoke_agent_key(
         self, agent_id: str, owner_id: str,
@@ -212,17 +189,19 @@ class AgentService:
         async with self._dao.transaction():
             return await self._dao.find_registration_by_user_code(user_code)
 
-
-def _agent_to_dict(agent: Agent) -> dict[str, object]:
-    """Serialize an Agent to a JSON-safe dict."""
-    return {
-        "id": agent.id,
-        "name": agent.name,
-        "robot_type": agent.robot_type,
-        "owner_id": agent.owner_id,
-        "status": agent.status,
-        "created_at": agent.created_at.isoformat() if agent.created_at else None,
-        "last_seen_at": (
-            agent.last_seen_at.isoformat() if agent.last_seen_at else None
-        ),
-    }
+    @staticmethod
+    def _agent_to_dict(agent: Agent) -> dict[str, object]:
+        """Serialize an Agent to a JSON-safe dict."""
+        return {
+            "id": agent.id,
+            "name": agent.name,
+            "robot_type": agent.robot_type,
+            "owner_id": agent.owner_id,
+            "status": agent.status,
+            "created_at": (
+                agent.created_at.isoformat() if agent.created_at else None
+            ),
+            "last_seen_at": (
+                agent.last_seen_at.isoformat() if agent.last_seen_at else None
+            ),
+        }
