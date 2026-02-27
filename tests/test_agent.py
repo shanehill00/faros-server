@@ -570,12 +570,12 @@ async def test_device_page_expired_html(client: TestClient) -> None:  # type: ig
 
 
 @pytest.mark.asyncio
-async def test_approve_same_agent_name_reuses_agent(client: TestClient) -> None:  # type: ignore[type-arg]
-    """Approving a second device with the same agent name reuses the existing agent."""
+async def test_returning_agent_auto_approved(client: TestClient) -> None:  # type: ignore[type-arg]
+    """A second device/start for an existing agent auto-approves without browser."""
     user = await create_test_user()
     headers = await auth_headers(user)
 
-    # First registration
+    # First registration — requires manual approval
     start1 = client.post(
         "/api/agents/device/start",
         json={"agent_name": "reuse-bot", "robot_type": "px4"},
@@ -587,20 +587,58 @@ async def test_approve_same_agent_name_reuses_agent(client: TestClient) -> None:
     )
     agent_id_1 = response1.json()["agent_id"]
 
-    # Second registration, same agent name
+    # Second registration — auto-approved at start time (returning agent)
     start2 = client.post(
         "/api/agents/device/start",
         json={"agent_name": "reuse-bot", "robot_type": "px4"},
     )
-    response2 = client.post(
+    poll2 = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start2.json()["device_code"]},
+    )
+    assert poll2.json()["status"] == "complete"
+    agent_id_2 = poll2.json()["agent_id"]
+
+    # Same agent reused, no browser interaction needed
+    assert agent_id_1 == agent_id_2
+
+
+@pytest.mark.asyncio
+async def test_approve_reuses_agent_without_owner(client: TestClient) -> None:  # type: ignore[type-arg]
+    """approve_device reuses an existing agent that has no owner (empty owner_id)."""
+    from faros_server.models.agent import Agent
+
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    # Create an agent directly with empty owner_id (no auto-approve at start)
+    pool = Database.get_pool()
+    async with pool() as session:
+        agent = Agent(name="orphan-bot", robot_type="px4", owner_id="")
+        session.add(agent)
+        await session.commit()
+        await session.refresh(agent)
+        orphan_id = agent.id
+
+    # Start device flow — no auto-approve because owner_id is empty
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "orphan-bot", "robot_type": "px4"},
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    assert poll.json()["status"] == "authorization_pending"
+
+    # Manual approval reuses the existing agent
+    response = client.post(
         "/api/agents/device/approve",
-        json={"user_code": start2.json()["user_code"]},
+        json={"user_code": start.json()["user_code"]},
         headers=headers,
     )
-    agent_id_2 = response2.json()["agent_id"]
-
-    # Same agent reused
-    assert agent_id_1 == agent_id_2
+    assert response.status_code == 200
+    assert response.json()["agent_id"] == orphan_id
 
 
 # --- resolve_api_key (service-level test) ---
