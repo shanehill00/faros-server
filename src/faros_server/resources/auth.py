@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import secrets
 
 from faros_server.clients.google_oauth_client import GoogleOAuthClient
@@ -61,6 +63,23 @@ class AuthResource:
         if not self._oauth_client.is_configured:
             raise OAuthNotConfiguredError("Google OAuth not configured")
         state = secrets.token_urlsafe(32)
+        return self._oauth_client.authorization_url(
+            redirect_uri=self._oauth_client.callback_uri,
+            state=state,
+        )
+
+    def device_login_url(self, provider: str, next_path: str) -> str:
+        """Build OAuth URL for device-flow approval. Encodes next_path in state.
+
+        Raises:
+            UnsupportedProviderError: If the provider is not supported.
+            OAuthNotConfiguredError: If OAuth credentials are not set.
+        """
+        self._validate_provider(provider)
+        if not self._oauth_client.is_configured:
+            raise OAuthNotConfiguredError("Google OAuth not configured")
+        state_data = json.dumps({"next": next_path, "csrf": secrets.token_urlsafe(16)})
+        state = base64.urlsafe_b64encode(state_data.encode()).decode()
         return self._oauth_client.authorization_url(
             redirect_uri=self._oauth_client.callback_uri,
             state=state,

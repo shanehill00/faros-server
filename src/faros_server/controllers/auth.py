@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from litestar import Controller, get
+import base64
+import json
+
+from litestar import Controller, Request, get
+from litestar.datastructures import State as LitestarState
 from litestar.exceptions import HTTPException, NotAuthorizedException
 from litestar.response import Redirect
 
@@ -14,6 +18,21 @@ from faros_server.resources.auth import (
     OAuthNotConfiguredError,
     UnsupportedProviderError,
 )
+
+
+def _extract_next_path(state: str) -> str | None:
+    """Decode next_path from OAuth state. Returns None if absent or invalid."""
+    if not state:
+        return None
+    try:
+        data = json.loads(base64.urlsafe_b64decode(state).decode())
+        path = str(data.get("next", ""))
+    except (json.JSONDecodeError, ValueError, KeyError):
+        return None
+    # Prevent open redirect — only allow device approval paths
+    if path.startswith("/api/agents/device/"):
+        return path
+    return None
 
 
 class AuthController(Controller):
@@ -34,15 +53,25 @@ class AuthController(Controller):
 
     @get("/callback/{provider:str}")
     async def callback(
-        self, provider: str, code: str, auth: AuthResource,
-    ) -> dict[str, str]:
-        """Handle OAuth callback: exchange code, find/create user, issue JWT."""
+        self,
+        provider: str,
+        code: str,
+        auth: AuthResource,
+        request: Request[object, object, LitestarState],
+    ) -> dict[str, str] | Redirect:
+        """Handle OAuth callback. If state contains 'next', redirect with token."""
         try:
-            return await auth.callback(provider, code)
+            result = await auth.callback(provider, code)
         except UnsupportedProviderError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except AuthError as error:
             raise NotAuthorizedException(detail=str(error)) from error
+        oauth_state = request.query_params.get("state", "")
+        next_path = _extract_next_path(oauth_state)
+        if next_path is not None:
+            token = result["access_token"]
+            return Redirect(path=f"{next_path}?token={token}", status_code=302)
+        return result
 
     @get("/link/{provider:str}")
     async def link_provider(
