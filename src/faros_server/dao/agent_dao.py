@@ -158,6 +158,16 @@ class AgentDAO:
         )
         return result.scalar_one_or_none()
 
+    async def has_active_keys(self, agent_id: str) -> bool:
+        """Check if an agent has any non-revoked API keys."""
+        result = await self._conn().execute(
+            select(ApiKey.key_hash).where(
+                ApiKey.agent_id == agent_id,
+                ApiKey.revoked == False,  # noqa: E712 — SQLAlchemy comparison
+            ).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def revoke_api_keys_for_agent(self, agent_id: str) -> int:
         """Revoke all API keys for an agent. Returns count revoked."""
         result = await self._conn().execute(
