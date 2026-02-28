@@ -1165,3 +1165,123 @@ def test_heartbeat_no_auth(client: TestClient) -> None:  # type: ignore[type-arg
         json={"timestamp": 1.0},
     )
     assert response.status_code == 401
+
+
+# --- Events ---
+
+
+def _sample_event() -> dict[str, object]:
+    """Build a minimal anomaly event dict for testing."""
+    return {
+        "trace_id": "t1",
+        "timestamp": 1234567890.0,
+        "group": "drivetrain",
+        "alert_state": "SUSTAINED",
+        "raw_score": 0.05,
+        "ema_score": 0.04,
+        "per_channel_mse": [0.01, 0.02],
+        "channel_names": ["ch0", "ch1"],
+        "drift_triggered": True,
+        "spike_triggered": False,
+        "model_id": "v1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_post_events_stores_events(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/events stores events in agent_events table."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "ev-bot", "robot_type": "px4"},
+    )
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": start.json()["user_code"]},
+        headers=headers,
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    api_key = poll.json()["api_key"]
+    agent_id = poll.json()["agent_id"]
+
+    events = [_sample_event(), {**_sample_event(), "trace_id": "t2", "timestamp": 2.0}]
+    response = client.post(
+        "/api/agents/events",
+        json=events,
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    assert response.status_code == 201
+    assert response.json()["published"] == 2
+
+    # Verify rows in DB
+    from sqlalchemy import select
+
+    from faros_server.models.event import AgentEvent
+
+    pool = Database.get_pool()
+    async with pool() as session:
+        result = await session.execute(
+            select(AgentEvent).where(AgentEvent.agent_id == agent_id)
+        )
+        rows = list(result.scalars())
+        assert len(rows) == 2
+        trace_ids = {r.trace_id for r in rows}
+        assert trace_ids == {"t1", "t2"}
+        assert rows[0].group == "drivetrain"
+        assert rows[0].alert_state == "SUSTAINED"
+        assert rows[0].drift_triggered is True
+        assert rows[0].spike_triggered is False
+
+
+def test_post_events_invalid_key(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/events with invalid key returns 401."""
+    response = client.post(
+        "/api/agents/events",
+        json=[_sample_event()],
+        headers={"Authorization": "Bearer fk_bogus"},
+    )
+    assert response.status_code == 401
+
+
+def test_post_events_no_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/events without auth returns 401."""
+    response = client.post(
+        "/api/agents/events",
+        json=[_sample_event()],
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_post_events_empty_batch(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/events with empty list returns 201, published=0."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "ev-empty-bot", "robot_type": "px4"},
+    )
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": start.json()["user_code"]},
+        headers=headers,
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    api_key = poll.json()["api_key"]
+
+    response = client.post(
+        "/api/agents/events",
+        json=[],
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    assert response.status_code == 201
+    assert response.json()["published"] == 0

@@ -125,6 +125,25 @@ class AgentController(Controller):
                 status_code=409, detail=str(error),
             ) from error
 
+    @post("/events", status_code=201)
+    async def post_events(
+        self,
+        data: list[dict[str, object]],
+        request: Request[object, object, State],
+        agent_resource: AgentResource,
+    ) -> dict[str, int]:
+        """Agent posts a batch of anomaly events (API-key auth)."""
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            raise NotAuthorizedException(
+                detail="Missing or invalid Authorization header",
+            )
+        api_key = header[len("Bearer "):]
+        try:
+            return await agent_resource.record_events(api_key, data)
+        except AgentNotFoundError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
+
     @post("/heartbeat", status_code=200)
     async def heartbeat(
         self,
