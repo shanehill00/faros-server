@@ -339,6 +339,28 @@ async def test_device_page_already_approved(client: TestClient) -> None:  # type
     assert "Already Registered" in response.text
 
 
+@pytest.mark.asyncio
+async def test_device_page_cookie_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """GET /api/agents/device/{code} with faros_token cookie works without ?token= param."""
+    user = await create_test_user()
+    token = JWTManager.create_token({"sub": user.id})
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "cookie-bot", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+
+    response = client.get(
+        f"/api/agents/device/{user_code}",
+        cookies={"faros_token": token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "cookie-bot" in response.text
+
+
 def test_device_page_token_no_sub_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
     """Device page with token missing 'sub' claim redirects to SSO."""
     _oauth_client(client)._client_id = "test-client-id"

@@ -36,7 +36,7 @@ class DevicePageController(Controller):
     async def _try_resolve_user(
         request: Request[object, object, State], token: str, auth: AuthResource,
     ) -> tuple[User, str] | None:
-        """Resolve user from query param token or Authorization header.
+        """Resolve user from query param token, Authorization header, or cookie.
 
         Returns (user, token_string) or None if no valid auth found.
         """
@@ -44,6 +44,8 @@ class DevicePageController(Controller):
             header = request.headers.get("Authorization", "")
             if header.startswith("Bearer "):
                 token = header[len("Bearer "):]
+        if not token:
+            token = request.cookies.get("faros_token", "")
         if not token:
             return None
         try:
