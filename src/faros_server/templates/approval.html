@@ -53,7 +53,7 @@ async function deny() {
     });
     if (r.ok) {
       document.getElementById('result').innerHTML =
-        '<span class="error">Registration denied. You can close this tab.</span>';
+        'Registration denied. You can close this tab.';
     } else {
       const d = await r.json();
       document.getElementById('result').innerHTML =

@@ -340,6 +340,35 @@ async def test_device_page_already_approved(client: TestClient) -> None:  # type
 
 
 @pytest.mark.asyncio
+async def test_device_page_denied(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page for denied registration shows 'Registration Denied'."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+    token = JWTManager.create_token({"sub": user.id})
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "denied-page-bot", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+
+    # Deny the registration
+    client.post(
+        "/api/agents/device/deny",
+        json={"user_code": user_code},
+        headers=headers,
+    )
+
+    response = client.get(
+        f"/api/agents/device/{user_code}?token={token}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "Registration Denied" in response.text
+    assert "denied-page-bot" in response.text
+
+
+@pytest.mark.asyncio
 async def test_device_page_cookie_auth(client: TestClient) -> None:  # type: ignore[type-arg]
     """GET /api/agents/device/{code} with faros_token cookie works without ?token= param."""
     user = await create_test_user()

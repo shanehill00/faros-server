@@ -24,6 +24,7 @@ from faros_server.templates import load_template
 _BASE_HTML = load_template("base.html")
 _APPROVAL_HTML = load_template("approval.html")
 _ALREADY_REGISTERED_HTML = load_template("already_registered.html")
+_DENIED_HTML = load_template("denied.html")
 _ERROR_HTML = load_template("error.html")
 
 
@@ -66,6 +67,10 @@ class DevicePageController(Controller):
         robot_type = html.escape(info["robot_type"])
         user_code = html.escape(info["user_code"])
         status = info.get("status", "pending")
+
+        if status == "denied":
+            body = _DENIED_HTML.safe_substitute(agent_name=agent_name)
+            return DevicePageController._render("Registration Denied", body)
 
         if status != "pending":
             body = _ALREADY_REGISTERED_HTML.safe_substitute(agent_name=agent_name)
