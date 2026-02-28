@@ -4,12 +4,21 @@
   <dt>Robot Type</dt><dd>$robot_type</dd>
   <dt>Device Code</dt><dd>$user_code</dd>
 </dl>
-<button id="approve" onclick="approve()">Approve</button>
-<button class="deny" id="deny" onclick="deny()">Deny</button>
+<div id="buttons">
+  <button id="approve" onclick="approve()">Approve</button>
+  <button class="deny" id="deny" onclick="deny()">Deny</button>
+</div>
 <div id="result"></div>
 <script>
 const token = '$token';
 const userCode = '$user_code';
+function hideButtons() {
+  document.getElementById('buttons').style.display = 'none';
+}
+function showButtons() {
+  document.getElementById('approve').disabled = false;
+  document.getElementById('deny').disabled = false;
+}
 async function approve() {
   document.getElementById('approve').disabled = true;
   document.getElementById('deny').disabled = true;
@@ -24,25 +33,46 @@ async function approve() {
     });
     const d = await r.json();
     if (r.ok) {
+      hideButtons();
       document.getElementById('result').innerHTML =
         '<span class="success">Agent registered! You can close this tab.</span>';
     } else {
       document.getElementById('result').innerHTML =
         '<span class="error">Error: ' + (d.detail || 'Unknown error') + '</span>';
-      document.getElementById('approve').disabled = false;
-      document.getElementById('deny').disabled = false;
+      showButtons();
     }
   } catch (e) {
     document.getElementById('result').innerHTML =
       '<span class="error">Network error.</span>';
-    document.getElementById('approve').disabled = false;
-    document.getElementById('deny').disabled = false;
+    showButtons();
   }
 }
-function deny() {
-  document.getElementById('result').innerHTML =
-    '<span class="error">Registration denied. You can close this tab.</span>';
+async function deny() {
   document.getElementById('approve').disabled = true;
   document.getElementById('deny').disabled = true;
+  try {
+    const r = await fetch('/api/agents/device/deny', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ user_code: userCode })
+    });
+    if (r.ok) {
+      hideButtons();
+      document.getElementById('result').innerHTML =
+        'Registration denied. You can close this tab.';
+    } else {
+      const d = await r.json();
+      document.getElementById('result').innerHTML =
+        '<span class="error">Error: ' + (d.detail || 'Unknown error') + '</span>';
+      showButtons();
+    }
+  } catch (e) {
+    document.getElementById('result').innerHTML =
+      '<span class="error">Network error.</span>';
+    showButtons();
+  }
 }
 </script>

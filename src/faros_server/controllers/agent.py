@@ -94,6 +94,37 @@ class AgentController(Controller):
                 status_code=409, detail=str(error),
             ) from error
 
+    @post("/device/deny", status_code=200)
+    async def deny_device(
+        self,
+        data: dict[str, str],
+        user: User,
+        agent_resource: AgentResource,
+    ) -> dict[str, str]:
+        """Operator denies a pending device registration.
+
+        Body: {"user_code": "XXXX-XXXX"}
+        """
+        user_code = data.get("user_code", "").strip()
+        if not user_code:
+            raise HTTPException(
+                status_code=400, detail="user_code is required",
+            )
+        try:
+            return await agent_resource.deny_device(user_code, user)
+        except DeviceFlowNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=str(error),
+            ) from error
+        except DeviceFlowExpiredError as error:
+            raise HTTPException(
+                status_code=410, detail=str(error),
+            ) from error
+        except DeviceFlowAlreadyUsedError as error:
+            raise HTTPException(
+                status_code=409, detail=str(error),
+            ) from error
+
     @post("/logout", status_code=200)
     async def agent_logout(
         self,

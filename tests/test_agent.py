@@ -340,6 +340,35 @@ async def test_device_page_already_approved(client: TestClient) -> None:  # type
 
 
 @pytest.mark.asyncio
+async def test_device_page_denied(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page for denied registration shows 'Registration Denied'."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+    token = JWTManager.create_token({"sub": user.id})
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "denied-page-bot", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+
+    # Deny the registration
+    client.post(
+        "/api/agents/device/deny",
+        json={"user_code": user_code},
+        headers=headers,
+    )
+
+    response = client.get(
+        f"/api/agents/device/{user_code}?token={token}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "Registration Denied" in response.text
+    assert "denied-page-bot" in response.text
+
+
+@pytest.mark.asyncio
 async def test_device_page_cookie_auth(client: TestClient) -> None:  # type: ignore[type-arg]
     """GET /api/agents/device/{code} with faros_token cookie works without ?token= param."""
     user = await create_test_user()
@@ -549,6 +578,130 @@ async def test_approve_missing_user_code(client: TestClient) -> None:  # type: i
         headers=headers,
     )
     assert response.status_code == 400
+
+
+# --- Deny device ---
+
+
+@pytest.mark.asyncio
+async def test_deny_device(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Denying a device sets status to denied, poll returns denied."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "deny-bot", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+    device_code = start.json()["device_code"]
+
+    response = client.post(
+        "/api/agents/device/deny",
+        json={"user_code": user_code},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "denied"
+
+    # Poll returns denied
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": device_code},
+    )
+    assert poll.json()["status"] == "denied"
+
+
+@pytest.mark.asyncio
+async def test_deny_unknown_user_code(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Denying with unknown user_code returns 404."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+    response = client.post(
+        "/api/agents/device/deny",
+        json={"user_code": "ZZZZ-9999"},
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_deny_already_approved(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Denying an already-approved device returns 409."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "deny-approved", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": user_code},
+        headers=headers,
+    )
+    response = client.post(
+        "/api/agents/device/deny",
+        json={"user_code": user_code},
+        headers=headers,
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_deny_expired_device(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Denying an expired device returns 410."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "deny-expired", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+
+    from sqlalchemy import update as sa_update
+
+    from faros_server.models.agent import DeviceRegistration
+
+    pool = Database.get_pool()
+    async with pool() as session:
+        await session.execute(
+            sa_update(DeviceRegistration)
+            .where(DeviceRegistration.user_code == user_code)
+            .values(expires_at=datetime.now(timezone.utc) - timedelta(minutes=1))
+        )
+        await session.commit()
+
+    response = client.post(
+        "/api/agents/device/deny",
+        json={"user_code": user_code},
+        headers=headers,
+    )
+    assert response.status_code == 410
+
+
+@pytest.mark.asyncio
+async def test_deny_missing_user_code(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Deny without user_code returns 400."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+    response = client.post(
+        "/api/agents/device/deny",
+        json={"user_code": ""},
+        headers=headers,
+    )
+    assert response.status_code == 400
+
+
+def test_deny_requires_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Deny endpoint requires JWT auth."""
+    response = client.post(
+        "/api/agents/device/deny",
+        json={"user_code": "ABCD-1234"},
+    )
+    assert response.status_code == 401
 
 
 # --- Device page: expired ---

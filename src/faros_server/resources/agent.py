@@ -88,6 +88,26 @@ class AgentResource:
                 raise DeviceFlowAlreadyUsedError(message) from error
             raise DeviceFlowNotFoundError(message) from error
 
+    async def deny_device(
+        self, user_code: str, user: User,
+    ) -> dict[str, str]:
+        """Deny a pending device registration.
+
+        Raises:
+            DeviceFlowNotFoundError: If user_code is unknown.
+            DeviceFlowExpiredError: If the device code has expired.
+            DeviceFlowAlreadyUsedError: If already approved or denied.
+        """
+        try:
+            return await self._service.deny_device(user_code)
+        except ValueError as error:
+            message = str(error)
+            if "expired" in message.lower():
+                raise DeviceFlowExpiredError(message) from error
+            if "already used" in message.lower():
+                raise DeviceFlowAlreadyUsedError(message) from error
+            raise DeviceFlowNotFoundError(message) from error
+
     async def device_page(
         self, user_code: str,
     ) -> dict[str, str]:
