@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 
 from faros_server.models.agent import Agent
 from faros_server.models.user import User
-from faros_server.plugins.anomaly import AnomalyPlugin
-from faros_server.plugins.heartbeat import HeartbeatPlugin
+from faros_server.plugins.contracts.anomaly import AnomalyPlugin
+from faros_server.plugins.contracts.heartbeat import HeartbeatPlugin
 from faros_server.services.agent_service import AgentService
 from faros_server.utils.time import Time
 

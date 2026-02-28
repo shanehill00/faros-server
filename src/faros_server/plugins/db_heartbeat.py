@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from faros_server.plugins.heartbeat import HeartbeatPlugin
+from faros_server.plugins.contracts.heartbeat import HeartbeatPlugin
 from faros_server.services.agent_service import AgentService
 
 

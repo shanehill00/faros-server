@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from faros_server.plugins.anomaly import AnomalyPlugin
+from faros_server.plugins.contracts.anomaly import AnomalyPlugin
 from faros_server.services.anomaly_service import AnomalyService
 
 
