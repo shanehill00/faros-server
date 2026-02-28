@@ -38,6 +38,8 @@ class AgentApiController(Controller):
     """API-key-authed endpoints called by edge agents."""
 
     path = "/api/agents"
+    # Litestar declares dependencies as an instance var, so ClassVar
+    # would fail mypy.  Suppress RUF012 (mutable class attribute).
     dependencies: Dependencies = {  # noqa: RUF012
         "agent": Provide(_provide_agent_from_api_key),
     }
