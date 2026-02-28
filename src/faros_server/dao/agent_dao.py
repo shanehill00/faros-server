@@ -132,6 +132,19 @@ class AgentDAO:
             .values(last_seen_at=datetime.now(timezone.utc))
         )
 
+    async def update_agent_health(
+        self, agent_id: str, health_json: str,
+    ) -> None:
+        """Overwrite last_health and touch last_seen_at."""
+        await self._conn().execute(
+            update(Agent)
+            .where(Agent.id == agent_id)
+            .values(
+                last_health=health_json,
+                last_seen_at=datetime.now(timezone.utc),
+            )
+        )
+
     # --- ApiKey ---
 
     async def create_api_key(

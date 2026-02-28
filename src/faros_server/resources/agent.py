@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from faros_server.models.agent import Agent
 from faros_server.models.user import User
+from faros_server.plugins.contracts.anomaly import AnomalyPlugin
+from faros_server.plugins.contracts.heartbeat import HeartbeatPlugin
 from faros_server.services.agent_service import AgentService
 from faros_server.utils.time import Time
 
@@ -35,9 +38,18 @@ class AgentResource:
     Built once at startup with all dependencies pre-wired.
     """
 
-    def __init__(self, *, agent_service: AgentService, base_url: str) -> None:
+    def __init__(
+        self,
+        *,
+        agent_service: AgentService,
+        base_url: str,
+        heartbeat_plugin: HeartbeatPlugin,
+        anomaly_plugin: AnomalyPlugin,
+    ) -> None:
         self._service = agent_service
         self._base_url = base_url
+        self._heartbeat_plugin = heartbeat_plugin
+        self._anomaly_plugin = anomaly_plugin
 
     async def start_device_flow(
         self, agent_name: str, robot_type: str,
@@ -130,16 +142,33 @@ class AgentResource:
             "status": reg.status,
         }
 
-    async def agent_logout(self, api_key: str) -> dict[str, int]:
-        """Revoke all keys for the agent identified by the given API key.
+    async def resolve_agent(self, api_key: str) -> Agent:
+        """Resolve an API key to its owning Agent.
 
         Raises:
-            AgentNotFoundError: If the API key is invalid.
+            AgentNotFoundError: If the API key is invalid or revoked.
         """
         try:
-            agent = await self._service.resolve_api_key(api_key)
+            return await self._service.resolve_api_key(api_key)
         except ValueError as error:
             raise AgentNotFoundError(str(error)) from error
+
+    async def record_heartbeat(
+        self, agent: Agent, payload: dict[str, object],
+    ) -> dict[str, str]:
+        """Store a heartbeat from an authenticated agent."""
+        await self._heartbeat_plugin.handle(agent.id, payload)
+        return {"status": "ok"}
+
+    async def record_anomalies(
+        self, agent: Agent, anomalies: list[dict[str, object]],
+    ) -> dict[str, int]:
+        """Store anomaly events from an authenticated agent."""
+        count = await self._anomaly_plugin.handle(agent.id, anomalies)
+        return {"published": count}
+
+    async def agent_logout(self, agent: Agent) -> dict[str, int]:
+        """Revoke all keys for the given agent."""
         return await self._service.revoke_agent_key(agent.id, agent.owner_id)
 
     async def list_agents(self, user: User) -> list[dict[str, object]]:
