@@ -77,7 +77,7 @@ class AuthController(Controller):
                 value=token,
                 httponly=True,
                 samesite="lax",
-                path="/api/agents/device",
+                path="/",
             ))
             return redirect
         return result
