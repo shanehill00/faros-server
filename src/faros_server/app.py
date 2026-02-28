@@ -19,16 +19,16 @@ from faros_server.controllers.auth import AuthController
 from faros_server.controllers.device_page import DevicePageController
 from faros_server.controllers.health import HealthController
 from faros_server.dao.agent_dao import AgentDAO
-from faros_server.dao.event_dao import EventDAO
+from faros_server.dao.anomaly_dao import AnomalyDAO
 from faros_server.dao.user_dao import UserDAO
 from faros_server.models.user import User
-from faros_server.plugins.db_event import DbEventPlugin
+from faros_server.plugins.db_anomaly import DbAnomalyPlugin
 from faros_server.plugins.db_heartbeat import DbHeartbeatPlugin
 from faros_server.resources.agent import AgentResource
 from faros_server.resources.auth import AuthResource
 from faros_server.resources.health import HealthResource
 from faros_server.services.agent_service import AgentService
-from faros_server.services.event_service import EventService
+from faros_server.services.anomaly_service import AnomalyService
 from faros_server.services.user_service import UserService
 from faros_server.utils.db import Database
 from faros_server.utils.jwt import JWTManager
@@ -74,14 +74,14 @@ class AppFactory:
             oauth_client=oauth_client,
         )
         heartbeat_plugin = DbHeartbeatPlugin(agent_service)
-        event_dao = EventDAO(pool)
-        event_service = EventService(event_dao)
-        event_plugin = DbEventPlugin(event_service)
+        anomaly_dao = AnomalyDAO(pool)
+        anomaly_service = AnomalyService(anomaly_dao)
+        anomaly_plugin = DbAnomalyPlugin(anomaly_service)
         agent_resource = AgentResource(
             agent_service=agent_service,
             base_url=settings.base_url,
             heartbeat_plugin=heartbeat_plugin,
-            event_plugin=event_plugin,
+            anomaly_plugin=anomaly_plugin,
         )
         return State({
             "health": health_resource,

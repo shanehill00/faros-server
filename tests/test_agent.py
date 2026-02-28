@@ -1167,10 +1167,10 @@ def test_heartbeat_no_auth(client: TestClient) -> None:  # type: ignore[type-arg
     assert response.status_code == 401
 
 
-# --- Events ---
+# --- Anomalies ---
 
 
-def _sample_event() -> dict[str, object]:
+def _sample_anomaly() -> dict[str, object]:
     """Build a minimal anomaly event dict for testing."""
     return {
         "trace_id": "t1",
@@ -1188,8 +1188,8 @@ def _sample_event() -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_post_events_stores_events(client: TestClient) -> None:  # type: ignore[type-arg]
-    """POST /api/agents/events stores events in agent_events table."""
+async def test_post_anomalies_stores_rows(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/anomalies stores events in agent_events table."""
     user = await create_test_user()
     headers = await auth_headers(user)
 
@@ -1209,10 +1209,10 @@ async def test_post_events_stores_events(client: TestClient) -> None:  # type: i
     api_key = poll.json()["api_key"]
     agent_id = poll.json()["agent_id"]
 
-    events = [_sample_event(), {**_sample_event(), "trace_id": "t2", "timestamp": 2.0}]
+    anomalies = [_sample_anomaly(), {**_sample_anomaly(), "trace_id": "t2", "timestamp": 2.0}]
     response = client.post(
-        "/api/agents/events",
-        json=events,
+        "/api/agents/anomalies",
+        json=anomalies,
         headers={"Authorization": f"Bearer {api_key}"},
     )
     assert response.status_code == 201
@@ -1238,28 +1238,28 @@ async def test_post_events_stores_events(client: TestClient) -> None:  # type: i
         assert rows[0].spike_triggered is False
 
 
-def test_post_events_invalid_key(client: TestClient) -> None:  # type: ignore[type-arg]
-    """POST /api/agents/events with invalid key returns 401."""
+def test_post_anomalies_invalid_key(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/anomalies with invalid key returns 401."""
     response = client.post(
-        "/api/agents/events",
-        json=[_sample_event()],
+        "/api/agents/anomalies",
+        json=[_sample_anomaly()],
         headers={"Authorization": "Bearer fk_bogus"},
     )
     assert response.status_code == 401
 
 
-def test_post_events_no_auth(client: TestClient) -> None:  # type: ignore[type-arg]
-    """POST /api/agents/events without auth returns 401."""
+def test_post_anomalies_no_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/anomalies without auth returns 401."""
     response = client.post(
-        "/api/agents/events",
-        json=[_sample_event()],
+        "/api/agents/anomalies",
+        json=[_sample_anomaly()],
     )
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_post_events_empty_batch(client: TestClient) -> None:  # type: ignore[type-arg]
-    """POST /api/agents/events with empty list returns 201, published=0."""
+async def test_post_anomalies_empty_batch(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/anomalies with empty list returns 201, published=0."""
     user = await create_test_user()
     headers = await auth_headers(user)
 
@@ -1279,7 +1279,7 @@ async def test_post_events_empty_batch(client: TestClient) -> None:  # type: ign
     api_key = poll.json()["api_key"]
 
     response = client.post(
-        "/api/agents/events",
+        "/api/agents/anomalies",
         json=[],
         headers={"Authorization": f"Bearer {api_key}"},
     )

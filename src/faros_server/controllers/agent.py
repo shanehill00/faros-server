@@ -139,8 +139,8 @@ class AgentController(Controller):
                 status_code=409, detail=str(error),
             ) from error
 
-    @post("/events", status_code=201)
-    async def post_events(
+    @post("/anomalies", status_code=201)
+    async def post_anomalies(
         self,
         data: list[dict[str, object]],
         request: Request[object, object, State],
@@ -149,7 +149,7 @@ class AgentController(Controller):
         """Agent posts a batch of anomaly events (API-key auth)."""
         api_key = self._require_api_key(request)
         try:
-            return await agent_resource.record_events(api_key, data)
+            return await agent_resource.record_anomalies(api_key, data)
         except AgentNotFoundError as error:
             raise NotAuthorizedException(detail=str(error)) from error
 

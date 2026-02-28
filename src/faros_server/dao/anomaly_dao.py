@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from faros_server.models.event import AgentEvent
 
-_active_conn: ContextVar[AsyncSession] = ContextVar("_event_dao_conn")
+_active_conn: ContextVar[AsyncSession] = ContextVar("_anomaly_dao_conn")
 
 
-class EventDAO:
+class AnomalyDAO:
     """Data access for anomaly events.
 
     Use transaction() to wrap a group of operations in one unit of work.
@@ -38,7 +38,7 @@ class EventDAO:
         """Return the current unit-of-work connection."""
         return _active_conn.get()
 
-    async def create_event(
+    async def create_anomaly(
         self,
         *,
         agent_id: str,

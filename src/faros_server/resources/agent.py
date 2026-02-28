@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from faros_server.models.user import User
-from faros_server.plugins.event import EventPlugin
+from faros_server.plugins.anomaly import AnomalyPlugin
 from faros_server.plugins.heartbeat import HeartbeatPlugin
 from faros_server.services.agent_service import AgentService
 from faros_server.utils.time import Time
@@ -43,12 +43,12 @@ class AgentResource:
         agent_service: AgentService,
         base_url: str,
         heartbeat_plugin: HeartbeatPlugin,
-        event_plugin: EventPlugin,
+        anomaly_plugin: AnomalyPlugin,
     ) -> None:
         self._service = agent_service
         self._base_url = base_url
         self._heartbeat_plugin = heartbeat_plugin
-        self._event_plugin = event_plugin
+        self._anomaly_plugin = anomaly_plugin
 
     async def start_device_flow(
         self, agent_name: str, robot_type: str,
@@ -156,8 +156,8 @@ class AgentResource:
         await self._heartbeat_plugin.handle(agent.id, payload)
         return {"status": "ok"}
 
-    async def record_events(
-        self, api_key: str, events: list[dict[str, object]],
+    async def record_anomalies(
+        self, api_key: str, anomalies: list[dict[str, object]],
     ) -> dict[str, int]:
         """Store anomaly events from an authenticated agent.
 
@@ -168,7 +168,7 @@ class AgentResource:
             agent = await self._service.resolve_api_key(api_key)
         except ValueError as error:
             raise AgentNotFoundError(str(error)) from error
-        count = await self._event_plugin.handle(agent.id, events)
+        count = await self._anomaly_plugin.handle(agent.id, anomalies)
         return {"published": count}
 
     async def agent_logout(self, api_key: str) -> dict[str, int]:
