@@ -161,6 +161,7 @@ class CLI:
         run_parser = subparsers.add_parser("run", help="Start the server")
         run_parser.add_argument("--host", default="0.0.0.0")
         run_parser.add_argument("--port", type=int, default=8000)
+        run_parser.add_argument("--reload", action="store_true", help="Auto-reload on file changes")
 
         return parser
 
@@ -183,6 +184,7 @@ class CLI:
                     factory=True,
                     host=args.host,
                     port=args.port,
+                    reload=args.reload,
                 )
         except KeyboardInterrupt:
             pass
