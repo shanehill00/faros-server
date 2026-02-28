@@ -163,7 +163,7 @@ class AgentDAO:
         result = await self._conn().execute(
             update(ApiKey)
             .where(ApiKey.agent_id == agent_id, ApiKey.revoked == False)  # noqa: E712
-            .values(revoked=True)
+            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
         )
         return cast(CursorResult[Any], result).rowcount
 
