@@ -8,8 +8,14 @@ import pytest
 from litestar.testing import TestClient
 
 from faros_server.utils.db import Database
+from faros_server.utils.jwt import JWTManager
 from faros_server.utils.time import Time
 from tests.conftest import auth_headers, create_test_user
+
+
+def _oauth_client(client: TestClient) -> object:  # type: ignore[type-arg]
+    """Return the GoogleOAuthClient inside the AuthResource."""
+    return client.app.state.auth._oauth_client
 
 # --- Device flow: start ---
 
@@ -228,14 +234,14 @@ def test_approve_requires_auth(client: TestClient) -> None:  # type: ignore[type
     assert response.status_code == 401
 
 
-# --- Device page ---
+# --- Device page (HTML approval) ---
 
 
 @pytest.mark.asyncio
-async def test_device_page(client: TestClient) -> None:  # type: ignore[type-arg]
-    """GET /api/agents/device/{user_code} returns registration info."""
+async def test_device_page_returns_html(client: TestClient) -> None:  # type: ignore[type-arg]
+    """GET /api/agents/device/{user_code}?token=JWT returns HTML approval page."""
     user = await create_test_user()
-    headers = await auth_headers(user)
+    token = JWTManager.create_token({"sub": user.id})
 
     start = client.post(
         "/api/agents/device/start",
@@ -244,30 +250,141 @@ async def test_device_page(client: TestClient) -> None:  # type: ignore[type-arg
     user_code = start.json()["user_code"]
 
     response = client.get(
-        f"/api/agents/device/{user_code}", headers=headers,
+        f"/api/agents/device/{user_code}?token={token}",
+        follow_redirects=False,
     )
     assert response.status_code == 200
-    data = response.json()
-    assert data["agent_name"] == "page-bot"
-    assert data["robot_type"] == "turtlebot3"
-    assert data["status"] == "pending"
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "page-bot" in body
+    assert "turtlebot3" in body
+    assert "Approve" in body
 
 
 @pytest.mark.asyncio
-async def test_device_page_unknown_code(client: TestClient) -> None:  # type: ignore[type-arg]
-    """GET /api/agents/device/{user_code} with unknown code returns 404."""
+async def test_device_page_unauthenticated_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
+    """GET /api/agents/device/{code} without token redirects to Google SSO."""
+    _oauth_client(client)._client_id = "test-client-id"
+    response = client.get(
+        "/api/agents/device/ABCD-1234",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert "accounts.google.com" in location
+    assert "test-client-id" in location
+
+
+@pytest.mark.asyncio
+async def test_device_page_auth_header(client: TestClient) -> None:  # type: ignore[type-arg]
+    """GET /api/agents/device/{code} with Authorization header works."""
     user = await create_test_user()
     headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "header-bot", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+
     response = client.get(
-        "/api/agents/device/ZZZZ-0000", headers=headers,
+        f"/api/agents/device/{user_code}",
+        headers=headers,
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "header-bot" in response.text
+
+
+@pytest.mark.asyncio
+async def test_device_page_unknown_code_html(client: TestClient) -> None:  # type: ignore[type-arg]
+    """GET /api/agents/device/{code} with unknown code returns 404 HTML."""
+    user = await create_test_user()
+    token = JWTManager.create_token({"sub": user.id})
+    response = client.get(
+        f"/api/agents/device/ZZZZ-0000?token={token}",
+        follow_redirects=False,
     )
     assert response.status_code == 404
+    assert "text/html" in response.headers["content-type"]
+    assert "Unknown device code" in response.text
 
 
-def test_device_page_requires_auth(client: TestClient) -> None:  # type: ignore[type-arg]
-    """Device page requires JWT auth."""
-    response = client.get("/api/agents/device/ABCD-1234")
-    assert response.status_code == 401
+@pytest.mark.asyncio
+async def test_device_page_already_approved(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page for already-approved registration shows 'already registered'."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+    token = JWTManager.create_token({"sub": user.id})
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "approved-bot", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+
+    # Approve first
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": user_code},
+        headers=headers,
+    )
+
+    response = client.get(
+        f"/api/agents/device/{user_code}?token={token}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "Already Registered" in response.text
+
+
+def test_device_page_token_no_sub_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page with token missing 'sub' claim redirects to SSO."""
+    _oauth_client(client)._client_id = "test-client-id"
+    token = JWTManager.create_token({"foo": "bar"})
+    response = client.get(
+        f"/api/agents/device/ABCD-1234?token={token}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "accounts.google.com" in response.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_device_page_token_deleted_user_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page with token for nonexistent user redirects to SSO."""
+    _oauth_client(client)._client_id = "test-client-id"
+    token = JWTManager.create_token({"sub": "nonexistent-id-000"})
+    response = client.get(
+        f"/api/agents/device/ABCD-1234?token={token}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "accounts.google.com" in response.headers["location"]
+
+
+def test_device_page_bad_token_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page with invalid token redirects to SSO (treats as unauthenticated)."""
+    _oauth_client(client)._client_id = "test-client-id"
+    response = client.get(
+        "/api/agents/device/ABCD-1234?token=invalid.jwt.token",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "accounts.google.com" in response.headers["location"]
+
+
+def test_device_page_oauth_not_configured(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page returns 500 HTML when OAuth is not configured."""
+    # Default test config has empty client_id → not configured
+    response = client.get(
+        "/api/agents/device/ABCD-1234",
+        follow_redirects=False,
+    )
+    assert response.status_code == 500
+    assert "text/html" in response.headers["content-type"]
+    assert "OAuth not configured" in response.text
 
 
 # --- List agents ---
@@ -416,10 +533,10 @@ async def test_approve_missing_user_code(client: TestClient) -> None:  # type: i
 
 
 @pytest.mark.asyncio
-async def test_device_page_expired(client: TestClient) -> None:  # type: ignore[type-arg]
-    """Device page for expired registration returns 410."""
+async def test_device_page_expired_html(client: TestClient) -> None:  # type: ignore[type-arg]
+    """Device page for expired registration returns 410 HTML."""
     user = await create_test_user()
-    headers = await auth_headers(user)
+    token = JWTManager.create_token({"sub": user.id})
 
     start = client.post(
         "/api/agents/device/start",
@@ -441,21 +558,24 @@ async def test_device_page_expired(client: TestClient) -> None:  # type: ignore[
         await session.commit()
 
     response = client.get(
-        f"/api/agents/device/{user_code}", headers=headers,
+        f"/api/agents/device/{user_code}?token={token}",
+        follow_redirects=False,
     )
     assert response.status_code == 410
+    assert "text/html" in response.headers["content-type"]
+    assert "expired" in response.text.lower()
 
 
 # --- Agent reuse: same name approved twice ---
 
 
 @pytest.mark.asyncio
-async def test_approve_same_agent_name_reuses_agent(client: TestClient) -> None:  # type: ignore[type-arg]
-    """Approving a second device with the same agent name reuses the existing agent."""
+async def test_returning_agent_auto_approved(client: TestClient) -> None:  # type: ignore[type-arg]
+    """A second device/start for an existing agent auto-approves without browser."""
     user = await create_test_user()
     headers = await auth_headers(user)
 
-    # First registration
+    # First registration — requires manual approval
     start1 = client.post(
         "/api/agents/device/start",
         json={"agent_name": "reuse-bot", "robot_type": "px4"},
@@ -467,20 +587,58 @@ async def test_approve_same_agent_name_reuses_agent(client: TestClient) -> None:
     )
     agent_id_1 = response1.json()["agent_id"]
 
-    # Second registration, same agent name
+    # Second registration — auto-approved at start time (returning agent)
     start2 = client.post(
         "/api/agents/device/start",
         json={"agent_name": "reuse-bot", "robot_type": "px4"},
     )
-    response2 = client.post(
+    poll2 = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start2.json()["device_code"]},
+    )
+    assert poll2.json()["status"] == "complete"
+    agent_id_2 = poll2.json()["agent_id"]
+
+    # Same agent reused, no browser interaction needed
+    assert agent_id_1 == agent_id_2
+
+
+@pytest.mark.asyncio
+async def test_approve_reuses_agent_without_owner(client: TestClient) -> None:  # type: ignore[type-arg]
+    """approve_device reuses an existing agent that has no owner (empty owner_id)."""
+    from faros_server.models.agent import Agent
+
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    # Create an agent directly with empty owner_id (no auto-approve at start)
+    pool = Database.get_pool()
+    async with pool() as session:
+        agent = Agent(name="orphan-bot", robot_type="px4", owner_id="")
+        session.add(agent)
+        await session.commit()
+        await session.refresh(agent)
+        orphan_id = agent.id
+
+    # Start device flow — no auto-approve because owner_id is empty
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "orphan-bot", "robot_type": "px4"},
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    assert poll.json()["status"] == "authorization_pending"
+
+    # Manual approval reuses the existing agent
+    response = client.post(
         "/api/agents/device/approve",
-        json={"user_code": start2.json()["user_code"]},
+        json={"user_code": start.json()["user_code"]},
         headers=headers,
     )
-    agent_id_2 = response2.json()["agent_id"]
-
-    # Same agent reused
-    assert agent_id_1 == agent_id_2
+    assert response.status_code == 200
+    assert response.json()["agent_id"] == orphan_id
 
 
 # --- resolve_api_key (service-level test) ---

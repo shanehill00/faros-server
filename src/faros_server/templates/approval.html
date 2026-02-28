@@ -1,0 +1,48 @@
+<h1>Approve Agent Registration</h1>
+<dl class="info">
+  <dt>Agent Name</dt><dd>$agent_name</dd>
+  <dt>Robot Type</dt><dd>$robot_type</dd>
+  <dt>Device Code</dt><dd>$user_code</dd>
+</dl>
+<button id="approve" onclick="approve()">Approve</button>
+<button class="deny" id="deny" onclick="deny()">Deny</button>
+<div id="result"></div>
+<script>
+const token = '$token';
+const userCode = '$user_code';
+async function approve() {
+  document.getElementById('approve').disabled = true;
+  document.getElementById('deny').disabled = true;
+  try {
+    const r = await fetch('/api/agents/device/approve', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ user_code: userCode })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      document.getElementById('result').innerHTML =
+        '<span class="success">Agent registered! You can close this tab.</span>';
+    } else {
+      document.getElementById('result').innerHTML =
+        '<span class="error">Error: ' + (d.detail || 'Unknown error') + '</span>';
+      document.getElementById('approve').disabled = false;
+      document.getElementById('deny').disabled = false;
+    }
+  } catch (e) {
+    document.getElementById('result').innerHTML =
+      '<span class="error">Network error.</span>';
+    document.getElementById('approve').disabled = false;
+    document.getElementById('deny').disabled = false;
+  }
+}
+function deny() {
+  document.getElementById('result').innerHTML =
+    '<span class="error">Registration denied. You can close this tab.</span>';
+  document.getElementById('approve').disabled = true;
+  document.getElementById('deny').disabled = true;
+}
+</script>

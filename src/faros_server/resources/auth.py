@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import secrets
 
 from faros_server.clients.google_oauth_client import GoogleOAuthClient
@@ -66,6 +68,23 @@ class AuthResource:
             state=state,
         )
 
+    def device_login_url(self, provider: str, next_path: str) -> str:
+        """Build OAuth URL for device-flow approval. Encodes next_path in state.
+
+        Raises:
+            UnsupportedProviderError: If the provider is not supported.
+            OAuthNotConfiguredError: If OAuth credentials are not set.
+        """
+        self._validate_provider(provider)
+        if not self._oauth_client.is_configured:
+            raise OAuthNotConfiguredError("Google OAuth not configured")
+        state_data = json.dumps({"next": next_path, "csrf": secrets.token_urlsafe(16)})
+        state = base64.urlsafe_b64encode(state_data.encode()).decode()
+        return self._oauth_client.authorization_url(
+            redirect_uri=self._oauth_client.callback_uri,
+            state=state,
+        )
+
     async def callback(self, provider: str, code: str) -> dict[str, str]:
         """Exchange an OAuth code, find/create user, return JWT.
 
@@ -85,6 +104,21 @@ class AuthResource:
             raise AuthError("User account is inactive")
         token = JWTManager.create_token({"sub": user.id})
         return {"access_token": token, "token_type": "bearer"}
+
+    async def resolve_token(self, token: str) -> User:
+        """Decode a JWT and return the corresponding active user.
+
+        Raises:
+            ValueError: If the token is invalid or the user is not found/inactive.
+        """
+        payload = JWTManager.decode_token(token)
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise ValueError("Invalid token payload: missing sub claim")
+        user = await self._user_service.find_by_id(str(user_id))
+        if user is None or not user.is_active:
+            raise ValueError("User not found or inactive")
+        return user
 
     async def me(self, user: User) -> dict[str, object]:
         """Return the authenticated user with linked auth methods."""

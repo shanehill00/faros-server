@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from litestar.testing import TestClient
 
 from faros_server.clients.google_oauth_client import OAuthUserInfo
+from faros_server.controllers.auth import AuthController
 from faros_server.utils.jwt import JWTManager
 from tests.conftest import auth_headers, create_test_user
 
@@ -383,3 +386,131 @@ async def test_me_inactive_user(client: TestClient) -> None:  # type: ignore[typ
     headers = await auth_headers(user)
     response =client.get("/api/auth/me", headers=headers)
     assert response.status_code == 401
+
+
+# --- Callback state redirect tests ---
+
+
+def _build_state(next_path: str) -> str:
+    """Build a base64-encoded state string with a next path."""
+    return base64.urlsafe_b64encode(
+        json.dumps({"next": next_path, "csrf": "test"}).encode()
+    ).decode()
+
+
+@pytest.mark.asyncio
+async def test_callback_with_next_state_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
+    """OAuth callback with valid next in state redirects with ?token=."""
+    mock_info = OAuthUserInfo(
+        provider="google",
+        provider_id="g-redirect",
+        email="redirect@faros.dev",
+        name="Redirect User",
+    )
+    state = _build_state("/api/agents/device/ABCD-1234")
+    with patch.object(
+        _oauth_client(client), "exchange_code",
+        new_callable=AsyncMock,
+        return_value=mock_info,
+    ):
+        response = client.get(
+            f"/api/auth/callback/google?code=test-code&state={state}",
+            follow_redirects=False,
+        )
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert location.startswith("/api/agents/device/ABCD-1234?token=")
+
+
+@pytest.mark.asyncio
+async def test_callback_without_state_returns_json(client: TestClient) -> None:  # type: ignore[type-arg]
+    """OAuth callback without state returns JSON (backward compat)."""
+    mock_info = OAuthUserInfo(
+        provider="google",
+        provider_id="g-nostate",
+        email="nostate@faros.dev",
+        name="No State",
+    )
+    with patch.object(
+        _oauth_client(client), "exchange_code",
+        new_callable=AsyncMock,
+        return_value=mock_info,
+    ):
+        response = client.get("/api/auth/callback/google?code=test-code")
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+
+def test_callback_bad_state_returns_json(client: TestClient) -> None:  # type: ignore[type-arg]
+    """OAuth callback with invalid state falls back to JSON."""
+    mock_info = OAuthUserInfo(
+        provider="google",
+        provider_id="g-badstate",
+        email="badstate@faros.dev",
+        name="Bad State",
+    )
+    with patch.object(
+        _oauth_client(client), "exchange_code",
+        new_callable=AsyncMock,
+        return_value=mock_info,
+    ):
+        response = client.get(
+            "/api/auth/callback/google?code=test-code&state=not-valid-base64!!",
+        )
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+def test_callback_state_open_redirect_blocked(client: TestClient) -> None:  # type: ignore[type-arg]
+    """OAuth callback with next pointing outside /api/agents/device/ returns JSON."""
+    mock_info = OAuthUserInfo(
+        provider="google",
+        provider_id="g-evil",
+        email="evil@faros.dev",
+        name="Evil",
+    )
+    state = _build_state("https://evil.com/steal")
+    with patch.object(
+        _oauth_client(client), "exchange_code",
+        new_callable=AsyncMock,
+        return_value=mock_info,
+    ):
+        response = client.get(
+            f"/api/auth/callback/google?code=test-code&state={state}",
+        )
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+# --- _extract_next_path unit tests ---
+
+
+def test_extract_next_path_valid() -> None:
+    """Valid state with /api/agents/device/ path is accepted."""
+    state = _build_state("/api/agents/device/XXXX-1234")
+    assert AuthController._extract_next_path(state) == "/api/agents/device/XXXX-1234"
+
+
+def test_extract_next_path_empty() -> None:
+    """Empty state returns None."""
+    assert AuthController._extract_next_path("") is None
+
+
+def test_extract_next_path_bad_json() -> None:
+    """Non-JSON state returns None."""
+    state = base64.urlsafe_b64encode(b"not json").decode()
+    assert AuthController._extract_next_path(state) is None
+
+
+def test_extract_next_path_no_next_key() -> None:
+    """State without 'next' key returns None."""
+    state = base64.urlsafe_b64encode(json.dumps({"csrf": "x"}).encode()).decode()
+    assert AuthController._extract_next_path(state) is None
+
+
+def test_extract_next_path_blocked_path() -> None:
+    """State with non-device path is blocked."""
+    state = _build_state("/api/auth/me")
+    assert AuthController._extract_next_path(state) is None

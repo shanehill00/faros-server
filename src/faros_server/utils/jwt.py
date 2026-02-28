@@ -7,12 +7,9 @@ from typing import Any, ClassVar
 
 from jose import JWTError, jwt
 
-from faros_server.dao.user_dao import UserDAO
-from faros_server.models.user import User
-
 
 class JWTManager:
-    """JWT token creation, verification, and user resolution.
+    """JWT token creation and verification.
 
     Call ``configure()`` once at startup, then use class methods directly.
     """
@@ -67,21 +64,3 @@ class JWTManager:
         except JWTError as error:
             raise ValueError(f"Invalid token: {error}") from error
         return payload
-
-    @classmethod
-    async def resolve_user(cls, token: str, user_dao: UserDAO) -> User:
-        """Decode a JWT token and return the corresponding active User.
-
-        Raises:
-            ValueError: If the token is invalid, has no sub claim,
-                or the user is not found/inactive.
-        """
-        payload = cls.decode_token(token)
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise ValueError("Invalid token payload: missing sub claim")
-        async with user_dao.transaction():
-            user = await user_dao.find_by_id(user_id)
-        if user is None or not user.is_active:
-            raise ValueError("User not found or inactive")
-        return user
