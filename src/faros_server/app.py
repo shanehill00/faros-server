@@ -15,6 +15,7 @@ from litestar.exceptions import NotAuthorizedException
 from faros_server.clients.google_oauth_client import GoogleOAuthClient
 from faros_server.config import ConfigLoader, Settings
 from faros_server.controllers.agent import AgentController
+from faros_server.controllers.agent_api import AgentApiController
 from faros_server.controllers.auth import AuthController
 from faros_server.controllers.device_page import DevicePageController
 from faros_server.controllers.health import HealthController
@@ -140,7 +141,7 @@ class AppFactory:
         return Litestar(
             route_handlers=[
                 HealthController, AuthController,
-                AgentController, DevicePageController,
+                AgentController, AgentApiController, DevicePageController,
             ],
             state=AppFactory._build(settings),
             lifespan=[AppFactory._lifespan],
