@@ -22,6 +22,20 @@ class AgentController(Controller):
 
     path = "/api/agents"
 
+    @staticmethod
+    def _require_api_key(request: Request[object, object, State]) -> str:
+        """Extract a Bearer API key from the Authorization header.
+
+        Raises:
+            NotAuthorizedException: If the header is missing or malformed.
+        """
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            raise NotAuthorizedException(
+                detail="Missing or invalid Authorization header",
+            )
+        return header[len("Bearer "):]
+
     @post("/device/start", status_code=201)
     async def start_device_flow(
         self,
@@ -133,12 +147,7 @@ class AgentController(Controller):
         agent_resource: AgentResource,
     ) -> dict[str, int]:
         """Agent posts a batch of anomaly events (API-key auth)."""
-        header = request.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            raise NotAuthorizedException(
-                detail="Missing or invalid Authorization header",
-            )
-        api_key = header[len("Bearer "):]
+        api_key = self._require_api_key(request)
         try:
             return await agent_resource.record_events(api_key, data)
         except AgentNotFoundError as error:
@@ -152,12 +161,7 @@ class AgentController(Controller):
         agent_resource: AgentResource,
     ) -> dict[str, str]:
         """Agent sends a heartbeat (API-key auth)."""
-        header = request.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            raise NotAuthorizedException(
-                detail="Missing or invalid Authorization header",
-            )
-        api_key = header[len("Bearer "):]
+        api_key = self._require_api_key(request)
         try:
             return await agent_resource.record_heartbeat(api_key, data)
         except AgentNotFoundError as error:
@@ -170,12 +174,7 @@ class AgentController(Controller):
         agent_resource: AgentResource,
     ) -> dict[str, int]:
         """Agent revokes its own API keys (API-key auth, not JWT)."""
-        header = request.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            raise NotAuthorizedException(
-                detail="Missing or invalid Authorization header",
-            )
-        api_key = header[len("Bearer "):]
+        api_key = self._require_api_key(request)
         try:
             return await agent_resource.agent_logout(api_key)
         except AgentNotFoundError as error:
