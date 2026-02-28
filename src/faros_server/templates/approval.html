@@ -39,10 +39,33 @@ async function approve() {
     document.getElementById('deny').disabled = false;
   }
 }
-function deny() {
-  document.getElementById('result').innerHTML =
-    '<span class="error">Registration denied. You can close this tab.</span>';
+async function deny() {
   document.getElementById('approve').disabled = true;
   document.getElementById('deny').disabled = true;
+  try {
+    const r = await fetch('/api/agents/device/deny', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ user_code: userCode })
+    });
+    if (r.ok) {
+      document.getElementById('result').innerHTML =
+        '<span class="error">Registration denied. You can close this tab.</span>';
+    } else {
+      const d = await r.json();
+      document.getElementById('result').innerHTML =
+        '<span class="error">Error: ' + (d.detail || 'Unknown error') + '</span>';
+      document.getElementById('approve').disabled = false;
+      document.getElementById('deny').disabled = false;
+    }
+  } catch (e) {
+    document.getElementById('result').innerHTML =
+      '<span class="error">Network error.</span>';
+    document.getElementById('approve').disabled = false;
+    document.getElementById('deny').disabled = false;
+  }
 }
 </script>

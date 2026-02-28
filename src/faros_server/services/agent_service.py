@@ -142,6 +142,35 @@ class AgentService:
 
         return {"agent_id": agent.id, "agent_name": agent.name}
 
+    async def deny_device(
+        self, user_code: str,
+    ) -> dict[str, str]:
+        """Deny a pending device registration.
+
+        Returns:
+            Dict with user_code and status.
+
+        Raises:
+            ValueError: If user_code is unknown, expired, or not pending.
+        """
+        async with self._dao.transaction():
+            reg = await self._dao.find_registration_by_user_code(user_code)
+
+            if reg is None:
+                raise ValueError("Unknown user code")
+
+            now = datetime.now(timezone.utc)
+            if now > Time.ensure_utc(reg.expires_at):
+                raise ValueError("Device code has expired")
+
+            if reg.status != "pending":
+                raise ValueError("Device code already used")
+
+            reg.status = "denied"
+            await self._dao.commit()
+
+        return {"user_code": user_code, "status": "denied"}
+
     async def resolve_api_key(self, api_key: str) -> Agent:
         """Resolve a plaintext API key to its Agent.
 
