@@ -339,6 +339,28 @@ async def test_device_page_already_approved(client: TestClient) -> None:  # type
     assert "Already Registered" in response.text
 
 
+@pytest.mark.asyncio
+async def test_device_page_cookie_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """GET /api/agents/device/{code} with faros_token cookie works without ?token= param."""
+    user = await create_test_user()
+    token = JWTManager.create_token({"sub": user.id})
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "cookie-bot", "robot_type": "px4"},
+    )
+    user_code = start.json()["user_code"]
+
+    response = client.get(
+        f"/api/agents/device/{user_code}",
+        cookies={"faros_token": token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "cookie-bot" in response.text
+
+
 def test_device_page_token_no_sub_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
     """Device page with token missing 'sub' claim redirects to SSO."""
     _oauth_client(client)._client_id = "test-client-id"
@@ -570,12 +592,12 @@ async def test_device_page_expired_html(client: TestClient) -> None:  # type: ig
 
 
 @pytest.mark.asyncio
-async def test_returning_agent_auto_approved(client: TestClient) -> None:  # type: ignore[type-arg]
-    """A second device/start for an existing agent auto-approves without browser."""
+async def test_returning_agent_requires_approval(client: TestClient) -> None:  # type: ignore[type-arg]
+    """A second device/start for an existing agent still requires browser approval."""
     user = await create_test_user()
     headers = await auth_headers(user)
 
-    # First registration — requires manual approval
+    # First registration — manual approval
     start1 = client.post(
         "/api/agents/device/start",
         json={"agent_name": "reuse-bot", "robot_type": "px4"},
@@ -587,7 +609,7 @@ async def test_returning_agent_auto_approved(client: TestClient) -> None:  # typ
     )
     agent_id_1 = response1.json()["agent_id"]
 
-    # Second registration — auto-approved at start time (returning agent)
+    # Second registration — still pending, requires browser approval
     start2 = client.post(
         "/api/agents/device/start",
         json={"agent_name": "reuse-bot", "robot_type": "px4"},
@@ -596,11 +618,15 @@ async def test_returning_agent_auto_approved(client: TestClient) -> None:  # typ
         "/api/agents/device/poll",
         json={"device_code": start2.json()["device_code"]},
     )
-    assert poll2.json()["status"] == "complete"
-    agent_id_2 = poll2.json()["agent_id"]
+    assert poll2.json()["status"] == "authorization_pending"
 
-    # Same agent reused, no browser interaction needed
-    assert agent_id_1 == agent_id_2
+    # Manual approval reuses the same agent
+    response2 = client.post(
+        "/api/agents/device/approve",
+        json={"user_code": start2.json()["user_code"]},
+        headers=headers,
+    )
+    assert response2.json()["agent_id"] == agent_id_1
 
 
 @pytest.mark.asyncio
@@ -717,6 +743,58 @@ async def test_resolve_api_key_revoked(client: TestClient) -> None:  # type: ign
     agent_service = client.app.state.agent._service
     with pytest.raises(ValueError, match="Invalid API key"):
         await agent_service.resolve_api_key(api_key)
+
+
+# --- Agent logout (API-key auth) ---
+
+
+@pytest.mark.asyncio
+async def test_agent_logout_revokes_keys(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/logout revokes the calling agent's keys."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "logout-bot", "robot_type": "px4"},
+    )
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": start.json()["user_code"]},
+        headers=headers,
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    api_key = poll.json()["api_key"]
+
+    response = client.post(
+        "/api/agents/logout",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["revoked"] >= 1
+
+    # Key is now invalid
+    agent_service = client.app.state.agent._service
+    with pytest.raises(ValueError, match="Invalid API key"):
+        await agent_service.resolve_api_key(api_key)
+
+
+def test_agent_logout_invalid_key(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/logout with invalid key returns 401."""
+    response = client.post(
+        "/api/agents/logout",
+        headers={"Authorization": "Bearer fk_bogus"},
+    )
+    assert response.status_code == 401
+
+
+def test_agent_logout_no_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/logout without auth returns 401."""
+    response = client.post("/api/agents/logout")
+    assert response.status_code == 401
 
 
 # --- Time.ensure_utc unit tests ---

@@ -110,6 +110,18 @@ class AgentResource:
             "status": reg.status,
         }
 
+    async def agent_logout(self, api_key: str) -> dict[str, int]:
+        """Revoke all keys for the agent identified by the given API key.
+
+        Raises:
+            AgentNotFoundError: If the API key is invalid.
+        """
+        try:
+            agent = await self._service.resolve_api_key(api_key)
+        except ValueError as error:
+            raise AgentNotFoundError(str(error)) from error
+        return await self._service.revoke_agent_key(agent.id, agent.owner_id)
+
     async def list_agents(self, user: User) -> list[dict[str, object]]:
         """Return all agents owned by the authenticated user."""
         return await self._service.list_agents(user.id)

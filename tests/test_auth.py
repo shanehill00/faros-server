@@ -400,7 +400,7 @@ def _build_state(next_path: str) -> str:
 
 @pytest.mark.asyncio
 async def test_callback_with_next_state_redirects(client: TestClient) -> None:  # type: ignore[type-arg]
-    """OAuth callback with valid next in state redirects with ?token=."""
+    """OAuth callback with valid next in state redirects with ?token= and sets cookie."""
     mock_info = OAuthUserInfo(
         provider="google",
         provider_id="g-redirect",
@@ -420,6 +420,10 @@ async def test_callback_with_next_state_redirects(client: TestClient) -> None:  
     assert response.status_code == 302
     location = response.headers["location"]
     assert location.startswith("/api/agents/device/ABCD-1234?token=")
+    # Cookie should be set for subsequent device-page visits
+    cookie_header = response.headers.get("set-cookie", "")
+    assert "faros_token=" in cookie_header
+    assert "HttpOnly" in cookie_header
 
 
 @pytest.mark.asyncio

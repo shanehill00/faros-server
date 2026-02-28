@@ -6,6 +6,7 @@ import base64
 import json
 
 from litestar import Controller, Request, get
+from litestar.datastructures import Cookie
 from litestar.datastructures import State as LitestarState
 from litestar.exceptions import HTTPException, NotAuthorizedException
 from litestar.response import Redirect
@@ -70,7 +71,15 @@ class AuthController(Controller):
         next_path = self._extract_next_path(oauth_state)
         if next_path is not None:
             token = result["access_token"]
-            return Redirect(path=f"{next_path}?token={token}", status_code=302)
+            redirect = Redirect(path=f"{next_path}?token={token}", status_code=302)
+            redirect.cookies.append(Cookie(
+                key="faros_token",
+                value=token,
+                httponly=True,
+                samesite="lax",
+                path="/",
+            ))
+            return redirect
         return result
 
     @get("/link/{provider:str}")
