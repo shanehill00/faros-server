@@ -51,9 +51,14 @@ class AgentService:
                 expires_at=expires_at,
             )
 
-            # Auto-approve returning agents that already have an owner.
+            # Auto-approve returning agents that have active (non-revoked) keys.
+            # If keys were revoked (explicit logout), require browser approval.
             existing = await self._dao.find_agent_by_name(agent_name)
-            if existing is not None and existing.owner_id:
+            if (
+                existing is not None
+                and existing.owner_id
+                and await self._dao.has_active_keys(existing.id)
+            ):
                 plaintext = Crypto.generate_api_key()
                 await self._dao.create_api_key(
                     key_hash=Crypto.hash_key(plaintext),
