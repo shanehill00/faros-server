@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -212,6 +213,15 @@ class AgentService:
             count = await self._dao.revoke_api_keys_for_agent(agent_id)
             await self._dao.commit()
         return {"revoked": count}
+
+    async def record_heartbeat(
+        self, agent_id: str, payload: dict[str, object],
+    ) -> None:
+        """Store the agent's latest health snapshot."""
+        health_json = json.dumps(payload)
+        async with self._dao.transaction():
+            await self._dao.update_agent_health(agent_id, health_json)
+            await self._dao.commit()
 
     async def get_registration_by_user_code(
         self, user_code: str,

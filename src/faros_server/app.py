@@ -21,6 +21,7 @@ from faros_server.controllers.health import HealthController
 from faros_server.dao.agent_dao import AgentDAO
 from faros_server.dao.user_dao import UserDAO
 from faros_server.models.user import User
+from faros_server.plugins.db_heartbeat import DbHeartbeatPlugin
 from faros_server.resources.agent import AgentResource
 from faros_server.resources.auth import AuthResource
 from faros_server.resources.health import HealthResource
@@ -69,9 +70,11 @@ class AppFactory:
             user_service=user_service,
             oauth_client=oauth_client,
         )
+        heartbeat_plugin = DbHeartbeatPlugin(agent_service)
         agent_resource = AgentResource(
             agent_service=agent_service,
             base_url=settings.base_url,
+            heartbeat_plugin=heartbeat_plugin,
         )
         return State({
             "health": health_resource,

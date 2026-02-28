@@ -1044,3 +1044,124 @@ async def test_resolve_api_key_orphaned_agent(client: TestClient) -> None:  # ty
     agent_service = client.app.state.agent._service
     with pytest.raises(ValueError, match="Agent not found for API key"):
         await agent_service.resolve_api_key(api_key)
+
+
+# --- Heartbeat ---
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_stores_health(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/heartbeat stores health JSON in Agent.last_health."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "hb-bot", "robot_type": "px4"},
+    )
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": start.json()["user_code"]},
+        headers=headers,
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    api_key = poll.json()["api_key"]
+    agent_id = poll.json()["agent_id"]
+
+    payload = {
+        "timestamp": 1234567890.0,
+        "cpu_percent": 42.5,
+        "memory_mb": 1024.0,
+        "disk_free_mb": 5000.0,
+        "uptime_s": 300.0,
+        "groups": [],
+    }
+    response = client.post(
+        "/api/agents/heartbeat",
+        json=payload,
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+    # Verify last_health was stored
+    import json
+
+    from faros_server.models.agent import Agent
+
+    pool = Database.get_pool()
+    async with pool() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(Agent).where(Agent.id == agent_id)
+        )
+        agent = result.scalar_one()
+        assert agent.last_health is not None
+        stored = json.loads(agent.last_health)
+        assert stored["cpu_percent"] == 42.5
+        assert stored["timestamp"] == 1234567890.0
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_updates_last_seen(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/heartbeat updates Agent.last_seen_at."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "hb-seen-bot", "robot_type": "px4"},
+    )
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": start.json()["user_code"]},
+        headers=headers,
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    api_key = poll.json()["api_key"]
+    agent_id = poll.json()["agent_id"]
+
+    response = client.post(
+        "/api/agents/heartbeat",
+        json={"timestamp": 1.0},
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    assert response.status_code == 200
+
+    from faros_server.models.agent import Agent
+
+    pool = Database.get_pool()
+    async with pool() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(Agent).where(Agent.id == agent_id)
+        )
+        agent = result.scalar_one()
+        assert agent.last_seen_at is not None
+
+
+def test_heartbeat_invalid_key(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/heartbeat with invalid key returns 401."""
+    response = client.post(
+        "/api/agents/heartbeat",
+        json={"timestamp": 1.0},
+        headers={"Authorization": "Bearer fk_bogus"},
+    )
+    assert response.status_code == 401
+
+
+def test_heartbeat_no_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/heartbeat without auth returns 401."""
+    response = client.post(
+        "/api/agents/heartbeat",
+        json={"timestamp": 1.0},
+    )
+    assert response.status_code == 401

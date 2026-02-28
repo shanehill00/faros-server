@@ -125,6 +125,25 @@ class AgentController(Controller):
                 status_code=409, detail=str(error),
             ) from error
 
+    @post("/heartbeat", status_code=200)
+    async def heartbeat(
+        self,
+        data: dict[str, object],
+        request: Request[object, object, State],
+        agent_resource: AgentResource,
+    ) -> dict[str, str]:
+        """Agent sends a heartbeat (API-key auth)."""
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            raise NotAuthorizedException(
+                detail="Missing or invalid Authorization header",
+            )
+        api_key = header[len("Bearer "):]
+        try:
+            return await agent_resource.record_heartbeat(api_key, data)
+        except AgentNotFoundError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
+
     @post("/logout", status_code=200)
     async def agent_logout(
         self,

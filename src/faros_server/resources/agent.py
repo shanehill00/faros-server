@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from faros_server.models.user import User
+from faros_server.plugins.heartbeat import HeartbeatPlugin
 from faros_server.services.agent_service import AgentService
 from faros_server.utils.time import Time
 
@@ -35,9 +36,16 @@ class AgentResource:
     Built once at startup with all dependencies pre-wired.
     """
 
-    def __init__(self, *, agent_service: AgentService, base_url: str) -> None:
+    def __init__(
+        self,
+        *,
+        agent_service: AgentService,
+        base_url: str,
+        heartbeat_plugin: HeartbeatPlugin,
+    ) -> None:
         self._service = agent_service
         self._base_url = base_url
+        self._heartbeat_plugin = heartbeat_plugin
 
     async def start_device_flow(
         self, agent_name: str, robot_type: str,
@@ -129,6 +137,21 @@ class AgentResource:
             "robot_type": reg.robot_type,
             "status": reg.status,
         }
+
+    async def record_heartbeat(
+        self, api_key: str, payload: dict[str, object],
+    ) -> dict[str, str]:
+        """Store a heartbeat from an authenticated agent.
+
+        Raises:
+            AgentNotFoundError: If the API key is invalid.
+        """
+        try:
+            agent = await self._service.resolve_api_key(api_key)
+        except ValueError as error:
+            raise AgentNotFoundError(str(error)) from error
+        await self._heartbeat_plugin.handle(agent.id, payload)
+        return {"status": "ok"}
 
     async def agent_logout(self, api_key: str) -> dict[str, int]:
         """Revoke all keys for the agent identified by the given API key.
