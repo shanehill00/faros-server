@@ -719,6 +719,58 @@ async def test_resolve_api_key_revoked(client: TestClient) -> None:  # type: ign
         await agent_service.resolve_api_key(api_key)
 
 
+# --- Agent logout (API-key auth) ---
+
+
+@pytest.mark.asyncio
+async def test_agent_logout_revokes_keys(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/logout revokes the calling agent's keys."""
+    user = await create_test_user()
+    headers = await auth_headers(user)
+
+    start = client.post(
+        "/api/agents/device/start",
+        json={"agent_name": "logout-bot", "robot_type": "px4"},
+    )
+    client.post(
+        "/api/agents/device/approve",
+        json={"user_code": start.json()["user_code"]},
+        headers=headers,
+    )
+    poll = client.post(
+        "/api/agents/device/poll",
+        json={"device_code": start.json()["device_code"]},
+    )
+    api_key = poll.json()["api_key"]
+
+    response = client.post(
+        "/api/agents/logout",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["revoked"] >= 1
+
+    # Key is now invalid
+    agent_service = client.app.state.agent._service
+    with pytest.raises(ValueError, match="Invalid API key"):
+        await agent_service.resolve_api_key(api_key)
+
+
+def test_agent_logout_invalid_key(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/logout with invalid key returns 401."""
+    response = client.post(
+        "/api/agents/logout",
+        headers={"Authorization": "Bearer fk_bogus"},
+    )
+    assert response.status_code == 401
+
+
+def test_agent_logout_no_auth(client: TestClient) -> None:  # type: ignore[type-arg]
+    """POST /api/agents/logout without auth returns 401."""
+    response = client.post("/api/agents/logout")
+    assert response.status_code == 401
+
+
 # --- Time.ensure_utc unit tests ---
 
 

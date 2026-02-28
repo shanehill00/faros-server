@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from litestar import Controller, delete, get, post
+from litestar import Controller, Request, delete, get, post
+from litestar.datastructures import State
 from litestar.exceptions import HTTPException, NotAuthorizedException
 
 from faros_server.models.user import User
@@ -92,6 +93,24 @@ class AgentController(Controller):
             raise HTTPException(
                 status_code=409, detail=str(error),
             ) from error
+
+    @post("/logout", status_code=200)
+    async def agent_logout(
+        self,
+        request: Request[object, object, State],
+        agent_resource: AgentResource,
+    ) -> dict[str, int]:
+        """Agent revokes its own API keys (API-key auth, not JWT)."""
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            raise NotAuthorizedException(
+                detail="Missing or invalid Authorization header",
+            )
+        api_key = header[len("Bearer "):]
+        try:
+            return await agent_resource.agent_logout(api_key)
+        except AgentNotFoundError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
 
     @get("/")
     async def list_agents(
