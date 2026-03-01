@@ -21,6 +21,7 @@ from faros_server.controllers.device_page import DevicePageController
 from faros_server.controllers.health import HealthController
 from faros_server.dao.agent_dao import AgentDAO
 from faros_server.dao.anomaly_dao import AnomalyDAO
+from faros_server.dao.command_dao import CommandDAO
 from faros_server.dao.user_dao import UserDAO
 from faros_server.models.user import User
 from faros_server.plugins.db_anomaly import DbAnomalyPlugin
@@ -30,6 +31,7 @@ from faros_server.resources.auth import AuthResource
 from faros_server.resources.health import HealthResource
 from faros_server.services.agent_service import AgentService
 from faros_server.services.anomaly_service import AnomalyService
+from faros_server.services.command_service import CommandService
 from faros_server.services.user_service import UserService
 from faros_server.utils.db import Database
 from faros_server.utils.jwt import JWTManager
@@ -78,8 +80,14 @@ class AppFactory:
         anomaly_dao = AnomalyDAO(pool)
         anomaly_service = AnomalyService(anomaly_dao)
         anomaly_plugin = DbAnomalyPlugin(anomaly_service)
+        command_dao = CommandDAO(pool)
+        command_service = CommandService(
+            command_dao,
+            command_ttl_seconds=settings.command_ttl_seconds,
+        )
         agent_resource = AgentResource(
             agent_service=agent_service,
+            command_service=command_service,
             base_url=settings.base_url,
             heartbeat_plugin=heartbeat_plugin,
             anomaly_plugin=anomaly_plugin,
@@ -151,6 +159,7 @@ class AppFactory:
                 "health_resource": Provide(AppFactory.provide_health, sync_to_thread=False),
                 "agent_resource": Provide(AppFactory.provide_agent, sync_to_thread=False),
             },
+            debug=True,
         )
 
 

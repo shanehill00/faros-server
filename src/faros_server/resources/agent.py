@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from faros_server.models.agent import Agent
 from faros_server.models.user import User
 from faros_server.plugins.contracts.anomaly import AnomalyPlugin
 from faros_server.plugins.contracts.heartbeat import HeartbeatPlugin
 from faros_server.services.agent_service import AgentService
+from faros_server.services.command_service import (
+    CommandAlreadyAckedError as CommandAlreadyAckedError,
+)
+from faros_server.services.command_service import (
+    CommandNotFoundError as CommandNotFoundError,
+)
+from faros_server.services.command_service import (
+    CommandNotInProgressError as CommandNotInProgressError,
+)
+from faros_server.services.command_service import (
+    CommandService,
+)
 from faros_server.utils.time import Time
 
 
@@ -42,11 +55,13 @@ class AgentResource:
         self,
         *,
         agent_service: AgentService,
+        command_service: CommandService,
         base_url: str,
         heartbeat_plugin: HeartbeatPlugin,
         anomaly_plugin: AnomalyPlugin,
     ) -> None:
         self._service = agent_service
+        self._command_service = command_service
         self._base_url = base_url
         self._heartbeat_plugin = heartbeat_plugin
         self._anomaly_plugin = anomaly_plugin
@@ -191,3 +206,107 @@ class AgentResource:
             if "not found" in message.lower():
                 raise AgentNotFoundError(message) from error
             raise AgentNotOwnedError(message) from error
+
+    async def _verify_agent_ownership(
+        self, agent_id: str, user: User,
+    ) -> None:
+        """Check that the user owns the agent.
+
+        Raises:
+            AgentNotFoundError: If the agent does not exist.
+            AgentNotOwnedError: If the user does not own the agent.
+        """
+        try:
+            await self._service.verify_agent_ownership(agent_id, user.id)
+        except ValueError as error:
+            message = str(error)
+            if "not found" in message.lower():
+                raise AgentNotFoundError(message) from error
+            raise AgentNotOwnedError(message) from error
+
+    async def poll_commands(
+        self, agent: Agent,
+    ) -> list[dict[str, Any]]:
+        """Poll for pending commands and mark them in_progress."""
+        return await self._command_service.poll_pending(agent.id)
+
+    async def append_command_output(
+        self,
+        agent: Agent,
+        command_id: str,
+        text: str,
+    ) -> dict[str, str]:
+        """Append output text to an in-progress command.
+
+        Raises:
+            CommandNotFoundError: If the command does not exist or wrong agent.
+            CommandNotInProgressError: If the command is not in_progress.
+        """
+        return await self._command_service.append_output(
+            agent.id, command_id, text,
+        )
+
+    async def ack_command(
+        self,
+        agent: Agent,
+        command_id: str,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Acknowledge a command with its result.
+
+        Raises:
+            CommandNotFoundError: If the command does not exist or wrong agent.
+            CommandAlreadyAckedError: If the command was already acknowledged.
+        """
+        return await self._command_service.acknowledge(
+            agent.id, command_id, result,
+        )
+
+    async def queue_command(
+        self,
+        agent_id: str,
+        user: User,
+        command_type: str,
+        payload: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Queue a command for an agent.
+
+        Raises:
+            AgentNotFoundError: If the agent does not exist.
+            AgentNotOwnedError: If the user does not own the agent.
+        """
+        await self._verify_agent_ownership(agent_id, user)
+        return await self._command_service.queue_command(
+            agent_id, command_type, payload,
+        )
+
+    async def list_commands(
+        self,
+        agent_id: str,
+        user: User,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List commands for an agent.
+
+        Raises:
+            AgentNotFoundError: If the agent does not exist.
+            AgentNotOwnedError: If the user does not own the agent.
+        """
+        await self._verify_agent_ownership(agent_id, user)
+        return await self._command_service.list_commands(agent_id, status=status)
+
+    async def get_command(
+        self,
+        agent_id: str,
+        user: User,
+        command_id: str,
+    ) -> dict[str, Any]:
+        """Get a single command for an agent.
+
+        Raises:
+            AgentNotFoundError: If the agent does not exist.
+            AgentNotOwnedError: If the user does not own the agent.
+            CommandNotFoundError: If the command does not exist.
+        """
+        await self._verify_agent_ownership(agent_id, user)
+        return await self._command_service.get_command(agent_id, command_id)

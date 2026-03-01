@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from litestar import Controller, delete, get, post
 from litestar.exceptions import HTTPException, NotAuthorizedException
 
@@ -10,6 +12,7 @@ from faros_server.resources.agent import (
     AgentNotFoundError,
     AgentNotOwnedError,
     AgentResource,
+    CommandNotFoundError,
     DeviceFlowAlreadyUsedError,
     DeviceFlowExpiredError,
     DeviceFlowNotFoundError,
@@ -149,3 +152,78 @@ class AgentController(Controller):
             ) from error
         except AgentNotOwnedError as error:
             raise NotAuthorizedException(detail=str(error)) from error
+
+    @post("/{agent_id:str}/commands", status_code=201)
+    async def queue_command(
+        self,
+        agent_id: str,
+        data: dict[str, Any],
+        user: User,
+        agent_resource: AgentResource,
+    ) -> dict[str, Any]:
+        """Operator queues a command for an agent.
+
+        Body: {"type": "...", "payload": {...}}
+        """
+        command_type = str(data.get("type", "")).strip()
+        if not command_type:
+            raise HTTPException(
+                status_code=400, detail="type is required",
+            )
+        payload = data.get("payload")
+        if payload is not None and not isinstance(payload, dict):
+            raise HTTPException(
+                status_code=400, detail="payload must be a JSON object or null",
+            )
+        try:
+            return await agent_resource.queue_command(
+                agent_id, user, command_type, payload,
+            )
+        except AgentNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=str(error),
+            ) from error
+        except AgentNotOwnedError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
+
+    @get("/{agent_id:str}/commands")
+    async def list_commands(
+        self,
+        agent_id: str,
+        user: User,
+        agent_resource: AgentResource,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Operator lists commands for an agent, optionally filtered by status."""
+        try:
+            return await agent_resource.list_commands(
+                agent_id, user, status=status,
+            )
+        except AgentNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=str(error),
+            ) from error
+        except AgentNotOwnedError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
+
+    @get("/{agent_id:str}/commands/{command_id:str}")
+    async def get_command(
+        self,
+        agent_id: str,
+        command_id: str,
+        user: User,
+        agent_resource: AgentResource,
+    ) -> dict[str, Any]:
+        """Operator gets a single command for an agent."""
+        try:
+            return await agent_resource.get_command(agent_id, user, command_id)
+        except AgentNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=str(error),
+            ) from error
+        except AgentNotOwnedError as error:
+            raise NotAuthorizedException(detail=str(error)) from error
+        except CommandNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=str(error),
+            ) from error

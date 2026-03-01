@@ -19,6 +19,7 @@ from faros_server.resources.auth import (
     OAuthNotConfiguredError,
     UnsupportedProviderError,
 )
+from faros_server.utils.jwt import JWTManager
 
 
 class AuthController(Controller):
@@ -75,6 +76,7 @@ class AuthController(Controller):
             redirect.cookies.append(Cookie(
                 key="faros_token",
                 value=token,
+                max_age=JWTManager.expire_seconds(),
                 httponly=True,
                 samesite="lax",
                 path="/",
