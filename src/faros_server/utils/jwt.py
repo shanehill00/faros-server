@@ -32,6 +32,11 @@ class JWTManager:
         cls._expire_minutes = expire_minutes
 
     @classmethod
+    def expire_seconds(cls) -> int:
+        """Return the token expiration in seconds."""
+        return cls._expire_minutes * 60
+
+    @classmethod
     def create_token(cls, claims: dict[str, Any]) -> str:
         """Create a signed JWT token.
 

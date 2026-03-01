@@ -26,5 +26,6 @@ class Settings(BaseSettings):
     google_userinfo_url: str = "https://www.googleapis.com/oauth2/v2/userinfo"
     device_code_expire_minutes: int = 15
     device_poll_interval: int = 5
+    command_ttl_seconds: int = 30
 
     model_config = {"env_prefix": ENV_PREFIX}

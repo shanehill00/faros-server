@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from litestar import Controller, Request, post
+from typing import Any
+
+from litestar import Controller, Request, get, post
 from litestar.datastructures import State
 from litestar.di import Provide
-from litestar.exceptions import NotAuthorizedException
+from litestar.exceptions import HTTPException, NotAuthorizedException
 from litestar.types import Dependencies
 
 from faros_server.models.agent import Agent
-from faros_server.resources.agent import AgentNotFoundError, AgentResource
+from faros_server.resources.agent import (
+    AgentNotFoundError,
+    AgentResource,
+    CommandAlreadyAckedError,
+    CommandNotFoundError,
+    CommandNotInProgressError,
+)
 
 
 async def _provide_agent_from_api_key(
@@ -72,3 +80,60 @@ class AgentApiController(Controller):
     ) -> dict[str, int]:
         """Agent revokes its own API keys."""
         return await agent_resource.agent_logout(agent)
+
+    @get("/commands", status_code=200)
+    async def poll_commands(
+        self,
+        agent: Agent,
+        agent_resource: AgentResource,
+    ) -> list[dict[str, Any]]:
+        """Agent polls for pending commands."""
+        return await agent_resource.poll_commands(agent)
+
+    @post("/commands/{command_id:str}/ack", status_code=200)
+    async def ack_command(
+        self,
+        command_id: str,
+        data: dict[str, Any],
+        agent: Agent,
+        agent_resource: AgentResource,
+    ) -> dict[str, Any]:
+        """Agent acknowledges a command with its result."""
+        try:
+            return await agent_resource.ack_command(agent, command_id, data)
+        except CommandNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=str(error),
+            ) from error
+        except CommandAlreadyAckedError as error:
+            raise HTTPException(
+                status_code=409, detail=str(error),
+            ) from error
+
+    @post("/commands/{command_id:str}/output", status_code=200)
+    async def append_output(
+        self,
+        command_id: str,
+        data: dict[str, Any],
+        agent: Agent,
+        agent_resource: AgentResource,
+    ) -> dict[str, str]:
+        """Agent appends output lines to an in-progress command."""
+        output = data.get("output")
+        if not isinstance(output, str) or not output:
+            raise HTTPException(
+                status_code=400,
+                detail="'output' must be a non-empty string",
+            )
+        try:
+            return await agent_resource.append_command_output(
+                agent, command_id, output,
+            )
+        except CommandNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=str(error),
+            ) from error
+        except CommandNotInProgressError as error:
+            raise HTTPException(
+                status_code=409, detail=str(error),
+            ) from error

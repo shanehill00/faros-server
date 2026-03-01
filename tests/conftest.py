@@ -34,6 +34,25 @@ def client(settings: Settings) -> Iterator[TestClient]:  # type: ignore[type-arg
         yield test_client
 
 
+@pytest.fixture()
+def ttl0_settings() -> Settings:
+    """Test settings with command_ttl_seconds=0 (immediate expiry)."""
+    return Settings(
+        secret_key="test-secret-key",
+        database_url="sqlite+aiosqlite://",
+        token_expire_minutes=30,
+        command_ttl_seconds=0,
+    )
+
+
+@pytest.fixture()
+def ttl0_client(ttl0_settings: Settings) -> Iterator[TestClient]:  # type: ignore[type-arg]
+    """Sync test client with command TTL=0 for expiry tests."""
+    app = create_app(ttl0_settings)
+    with TestClient(app=app) as test_client:
+        yield test_client
+
+
 async def create_test_user(
     name: str = "Test User",
     is_superuser: bool = True,

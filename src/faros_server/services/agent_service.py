@@ -223,6 +223,21 @@ class AgentService:
             await self._dao.update_agent_health(agent_id, health_json)
             await self._dao.commit()
 
+    async def verify_agent_ownership(
+        self, agent_id: str, owner_id: str,
+    ) -> None:
+        """Verify that the agent exists and is owned by the given user.
+
+        Raises:
+            ValueError: If the agent is not found or not owned by the user.
+        """
+        async with self._dao.transaction():
+            agent = await self._dao.find_agent_by_id(agent_id)
+        if agent is None:
+            raise ValueError("Agent not found")
+        if agent.owner_id != owner_id:
+            raise ValueError("Not the agent owner")
+
     async def get_registration_by_user_code(
         self, user_code: str,
     ) -> DeviceRegistration | None:
